@@ -1,33 +1,3 @@
-// ---------
-// 2025-12-20
-// 개발자 : KR_Tuki
-// 기능 : 애플리케이션 버전 체크 및 라이선스 검증
-// ---------
-
-// @version.js (1-30)
-// 날짜: 2025-12-20
-// Import 모듈 설명:
-// - fs: 파일 시스템 동기 접근. package.json, version.json 파일 읽기에 사용
-//   사용 예: fs.readFileSync() - 파일 내용 동기 읽기, fs.existsSync() - 파일 존재 여부 확인
-// - path: 파일 경로 처리. 버전 정보 파일 경로 조작에 사용
-//   사용 예: path.join(__dirname, ...) - 상대 경로 결합
-// - https: HTTPS 요청. 서버에서 최신 버전 정보 조회에 사용 (유료화 대비)
-//   사용 예: https.get() - HTTPS GET 요청
-// - crypto: 암호화 모듈. 버전 정보 해시 검증, 라이선스 키 검증에 사용
-//   사용 예: crypto.createHash() - 해시 생성, crypto.createHmac() - HMAC 서명 검증
-// - os: 운영체제 정보 제공. 시스템 정보 수집에 사용
-//   사용 예: os.platform() - 운영체제 플랫폼, os.hostname() - 호스트명
-// 변수 설명:
-//   - VERSION_FILE: 버전 정보 파일 경로 (package.json 또는 별도 version.json)
-//   - VERSION_CHECK_URL: 서버 버전 체크 URL (유료화 시 사용)
-//   - LICENSE_FILE: 라이선스 파일 경로 (유료화 시 사용)
-// 기능 원리:
-// 1. 로컬 버전 정보 읽기: package.json 또는 version.json에서 현재 버전 확인
-// 2. 서버 버전 체크 (선택적): HTTPS로 최신 버전 정보 조회 (유료화 대비)
-// 3. 버전 비교: 현재 버전과 최신 버전 비교하여 업데이트 필요 여부 확인
-// 4. 라이선스 검증 (유료화 대비): 라이선스 키 검증, 만료일 확인, 사용자 제한 확인
-// 5. 버전 추적: 사용자 시스템 정보와 버전 정보를 조합하여 고유 ID 생성 (무단 사용 방지)
-
 const fs = require('fs');
 const path = require('path');
 const https = require('https');

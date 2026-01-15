@@ -1,36 +1,3 @@
-// ---------
-// 2025-03-10
-// 개발자 : KR_Tuki
-// 기능 : Electron 프리로드 스크립트 (보안 격리)
-// ---------
-
-// @preload.js (1-20)
-// 날짜: 2025-03-10
-// Import 모듈 설명:
-// - electron (contextBridge, ipcRenderer): Electron 보안 격리 및 IPC 통신 모듈
-//   사용 예: contextBridge.exposeInMainWorld() - 렌더러 프로세스에 안전한 API 노출, ipcRenderer.invoke() - 메인 프로세스에 IPC 요청 전송
-// 변수 설명:
-//   - electronAPI: window.electronAPI로 렌더러 프로세스에 노출되는 API 객체
-//     각 서비스별 메서드 제공 (cleaner, memory, network, audio, gaming, recovery, updater, driver, cpu, version 등)
-// 기능 원리:
-// 1. Context Isolation을 통한 보안 격리: 메인 프로세스와 렌더러 프로세스 간 안전한 통신 브릿지 제공
-//    - 메인 프로세스의 Node.js API 직접 접근 차단
-//    - contextBridge를 통한 제한된 API만 노출
-//    - IPC 통신만 허용하여 보안 강화
-// 2. contextBridge.exposeInMainWorld()로 window.electronAPI에 API 노출
-//    - 모든 API 호출은 비동기 처리 (Promise 반환)
-//    - 에러 핸들링은 메인 프로세스에서 처리 후 결과 반환
-// 3. 각 API는 ipcRenderer.invoke()를 통해 메인 프로세스의 IPC 핸들러와 통신
-//    - 메시지 기반 통신으로 프로세스 간 격리 유지
-//    - 자동 직렬화/역직렬화 지원 (JSON 형식)
-// 4. 프로덕션 모드에서 DevTools 접근 차단:
-//    - window.devtools 속성 제거 (Object.defineProperty로 undefined 반환)
-//    - devtools-opened 이벤트 리스너로 DevTools 열림 감지 및 자동 리로드
-// 5. 보안 원칙:
-//    - 렌더러 프로세스는 오직 명시적으로 노출된 API만 사용 가능
-//    - 모든 시스템 명령 실행은 메인 프로세스에서만 수행
-//    - 입력 검증 및 타입 체크는 메인 프로세스 IPC 핸들러에서 수행
-
 const { contextBridge, ipcRenderer } = require('electron');
 
 if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {

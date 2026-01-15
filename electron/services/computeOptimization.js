@@ -1,26 +1,3 @@
-// ---------
-// 2025-11-17
-// 개발자 : KR_Tuki
-// 기능 : CPU/GPU Compute Optimization Service
-// ---------
-
-// @computeOptimization.js (1-19)
-// 날짜: 2025-11-17
-// Import 모듈 설명:
-// - child_process (exec): 시스템 명령어 실행. OpenCL, CUDA, Intel oneAPI 라이브러리 감지 및 설정에 사용
-// - util (promisify): 콜백 기반 함수를 Promise로 변환
-// - winreg (Registry): Windows 레지스트리 접근. 컴퓨팅 라이브러리 설정 변경에 사용
-// - fs (promises): 파일 시스템 비동기 접근. 라이브러리 DLL 파일 존재 확인에 사용
-//   사용 예: fs.access() - 파일 접근 가능 여부 확인, fs.readFile() - 설정 파일 읽기
-// - path: 파일 경로 처리. 라이브러리 경로 조작에 사용
-//   사용 예: path.join() - 경로 결합, path.dirname() - 디렉토리 경로 추출
-// - os: 운영체제 정보 제공. os.platform() 등으로 플랫폼 확인
-// 지원 기능:
-// - OpenCL 최적화 (GPU/CPU/DSP/FPGA 병렬 처리)
-// - CUDA 최적화 (NVIDIA GPU 가속 - cuBLAS, cuFFT, cuDNN, cuSPARSE)
-// - Intel oneAPI 최적화 (oneDNN, oneMKL, SYCL)
-// - 라이브러리 감지 및 설정
-
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');

@@ -1,22 +1,3 @@
-// ---------
-// 2025-11-08
-// 개발자 : KR_Tuki
-// 기능 : IPC 가상 메모리 할당자 (고수준 API)
-// ---------
-
-// @ipcAllocator.js (1-8)
-// 날짜: 2025-11-08
-// Import 모듈 설명:
-// - sharedMemory (SharedMemoryAllocator): 공유 메모리 할당자 클래스. Windows Memory-Mapped Files 기반 IPC 제공
-//   사용 예: new SharedMemoryAllocator(name, size) - 공유 메모리 할당자 생성
-//   .create() - 공유 메모리 생성, .write(offset, buffer) - 메모리 쓰기, .read(offset, length) - 메모리 읽기
-// 이 모듈은 SharedMemoryAllocator를 래핑하여 malloc/free처럼 사용할 수 있는 고수준 인터페이스 제공
-// 변수 설명:
-//   - allocator: SharedMemoryAllocator 인스턴스
-//   - allocations: 할당된 메모리 영역을 추적하는 Map (offset -> { size, type })
-//   - nextOffset: 다음 할당 위치를 저장하는 변수
-//   - headerSize: 메타데이터 영역 크기 (1024 바이트)
-
 const SharedMemoryAllocator = require('./sharedMemory');
 
 class IPCAllocator {

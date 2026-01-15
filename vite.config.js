@@ -15,9 +15,12 @@ export default defineConfig({
     emptyOutDir: true,
     minify: 'esbuild',
   },
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom'],
+  },
   esbuild: {
     charset: 'utf8',
-    legalComments: 'inline',
+    legalComments: 'none',
   },
   server: {
     port: 5173,

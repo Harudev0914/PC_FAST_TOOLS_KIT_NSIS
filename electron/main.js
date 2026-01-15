@@ -1,39 +1,3 @@
-// ---------
-// 2025-03-05
-// 개발자 : KR_Tuki
-// 기능 : Electron 메인 프로세스
-// ---------
-
-// @main.js (1-30)
-// 날짜: 2025-03-05
-// Import 모듈 설명:
-// - electron (app, BrowserWindow, ipcMain, dialog): Electron 프레임워크 핵심 모듈
-//   사용 예: app - 애플리케이션 생명주기 관리, BrowserWindow - 메인 윈도우 생성 및 관리, ipcMain - IPC 통신 처리, dialog - 파일/폴더 선택 다이얼로그
-// - path: 파일 경로 처리. preload.js 경로, dist/index.html 경로 조작에 사용
-//   사용 예: path.join(__dirname, 'preload.js') - preload 스크립트 경로 생성
-// 변수 설명:
-//   - isDev: 개발 모드 여부 확인. process.env.NODE_ENV === 'development' 또는 !app.isPackaged로 판단
-//     개발 모드에서는 Vite 개발 서버(http://127.0.0.1:5173)에서 로드, 프로덕션 모드에서는 dist/index.html 로드
-//   - mainWindow: 메인 브라우저 윈도우 인스턴스. 앱의 UI 창을 나타냄
-//   - ipcAllocator: IPC 가상 메모리 할당자. 대용량 데이터 전송 시 zero-copy 공유 메모리 사용
-// 기능 원리:
-// 1. Electron 애플리케이션의 메인 프로세스로, 브라우저 윈도우 생성 및 관리
-// 2. IPC 핸들러를 통해 렌더러 프로세스와 통신 (cleaner, memory, network, audio, gaming 등)
-// 3. 개발 모드에서는 Vite 개발 서버 연결, 프로덕션 모드에서는 빌드된 파일 로드
-// 4. 보안 설정:
-//    - nodeIntegration=false: 렌더러 프로세스에서 Node.js API 직접 접근 차단
-//    - contextIsolation=true: 메인과 렌더러 프로세스 간 격리, 보안 강화
-//    - webSecurity=true: 웹 보안 기능 활성화 (CORS, CSP 등)
-//    - sandbox=true: 렌더러 프로세스 샌드박스 모드, 권한 최소화
-//    - enableRemoteModule=false: 원격 모듈 비활성화 (보안 취약점 방지)
-// 5. 프로덕션 모드에서 DevTools 차단:
-//    - before-input-event로 F12, Ctrl+Shift+I 등 단축키 차단
-//    - devtools-opened 이벤트로 DevTools 열림 감지 및 자동 닫기
-//    - context-menu 이벤트로 우클릭 메뉴 차단
-//    - windowOpenHandler로 새 창 열기 차단
-// 6. 버전 체크 시스템: 앱 시작 시 버전 정보 확인 및 추적 (무단 사용 방지)
-// 7. 에러 핸들링: 모든 IPC 핸들러에 try-catch 적용하여 안정성 확보
-
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;

@@ -1,27 +1,3 @@
-// ---------
-// 2025-11-26
-// 개발자 : KR_Tuki
-// 기능 : 고급 네트워크 최적화 API 통합
-// ---------
-
-// @networkOptimization.js (1-23)
-// 날짜: 2025-11-26
-// Import 모듈 설명:
-// - child_process (exec): 시스템 명령어 실행. PowerShell로 네트워크 API 감지 및 설정에 사용
-//   사용 예: execAsync('powershell -Command "Get-ItemProperty..."') - 레지스트리에서 MsQuic 설치 확인
-// - util (promisify): 콜백 기반 함수를 Promise로 변환
-// - fs: 파일 시스템 동기 접근. DLL 파일 존재 확인에 사용
-//   사용 예: fs.existsSync() - 파일/디렉토리 존재 여부 확인
-// - path: 파일 경로 처리. DLL 경로 조작에 사용
-// - os: 운영체제 정보 제공. os.platform() 등으로 플랫폼 확인
-// - winreg (Registry): Windows 레지스트리 접근. 네트워크 API 설정 변경에 사용
-// - permissions (permissionsService): 관리자 권한 확인. isAdmin() 함수로 권한 확인
-// 구현된 기능:
-// 1. QUIC/HTTP/3 (MsQuic) - Microsoft QUIC 프로토콜 감지 및 활성화
-// 2. ENet (게임용 UDP 라이브러리) - 게임 네트워킹용 UDP 라이브러리 감지
-// 3. IOCP (Windows I/O Completion Ports) - Windows 비동기 I/O 최적화
-// 4. 네트워크 스택 최적화 - 레지스트리를 통한 네트워크 스택 파라미터 조정
-
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');

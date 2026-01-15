@@ -1,30 +1,3 @@
-// ---------
-// 2025-12-05
-// 개발자 : KR_Tuki
-// 기능 : Windows Memory-Mapped Files 기반 IPC 가상 메모리 할당자
-// ---------
-
-// @sharedMemory.js (1-18)
-// 날짜: 2025-12-05
-// Import 모듈 설명:
-// - child_process (exec): 시스템 명령어 실행. PowerShell로 Windows Memory-Mapped Files 생성/접근에 사용
-//   사용 예: execAsync('powershell -Command "Add-Type..."') - PowerShell로 C# 코드 실행하여 CreateFileMapping 호출
-// - util (promisify): 콜백 기반 함수를 Promise로 변환
-// - fs: 파일 시스템 동기 접근. 임시 파일 생성에 사용
-// - path: 파일 경로 처리. 임시 파일 경로 조작에 사용
-// - os: 운영체제 정보 제공. os.tmpdir()로 임시 디렉토리 경로 조회, os.platform()으로 플랫폼 확인
-// 특징:
-// - 프로세스 간 복사 없이 데이터 공유 (zero-copy)
-// - 대용량 데이터 효율적 전송
-// - IPC 성능 극대화
-// 변수 설명:
-//   - name: 공유 메모리 이름
-//   - size: 공유 메모리 크기(바이트, 기본값: 64MB)
-//   - mappedFile: 매핑된 파일 핸들
-//   - baseAddress: 기본 주소
-//   - isMainProcess: 메인 프로세스 여부 (process.type === 'browser')
-//   - tempFilePath: 임시 파일 경로
-
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
