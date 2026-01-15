@@ -1,3 +1,5 @@
+import React, { useState, useEffect, useRef } from 'react';
+
 /**
  * ---------
  * 2025-08-01
@@ -32,8 +34,6 @@
  * 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
  * 7. 성능 최적화: useCallback으로 함수 메모이제이션, 히스토리 데이터 크기 제한
  */
-
-import React, { useState, useEffect, useRef } from 'react';
 import ColorPicker from './ColorPicker';
 import '../styles/SmartOptimization.css';
 

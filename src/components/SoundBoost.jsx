@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-09-10
@@ -5,8 +7,6 @@
  * 기능 : 사운드 부스트 컴포넌트
  * ---------
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/SoundBoost.css';
 
 function SoundBoost() {

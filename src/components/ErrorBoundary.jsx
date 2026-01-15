@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-08-05
@@ -21,8 +23,6 @@
  * 4. 정상 UI 표시: 에러가 없을 때 this.props.children 렌더링
  * 5. 에러 격리: 하나의 컴포넌트에서 발생한 에러가 전체 앱을 중단시키지 않도록 방지
  */
-
-import React from 'react';
 import Error500 from './Error500';
 import '../styles/ErrorPages.css';
 

@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-07-25
@@ -22,8 +24,6 @@
  * 4. StrictMode: 개발 모드에서 잠재적 문제 감지 (이중 렌더링, deprecated API 사용 등)
  * 5. 에러 처리: root 요소가 없으면 에러 메시지 표시
  */
-
-import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/index.css';

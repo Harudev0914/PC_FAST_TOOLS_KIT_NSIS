@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-11-10
@@ -5,8 +7,6 @@
  * 기능 : 게이밍 모드 컴포넌트
  * ---------
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/GamingMode.css';
 
 function GamingMode() {

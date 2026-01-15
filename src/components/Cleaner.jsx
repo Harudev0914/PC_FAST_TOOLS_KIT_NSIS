@@ -1,3 +1,5 @@
+import React, { useState } from 'react';
+
 /**
  * ---------
  * 2025-10-20
@@ -23,8 +25,6 @@
  * 5. 결과 표시: 스캔/정리 결과를 사용자에게 표시 (정리된 파일 수, 해제된 공간 등)
  * 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
  */
-
-import React, { useState } from 'react';
 import '../styles/Cleaner.css';
 
 function Cleaner() {

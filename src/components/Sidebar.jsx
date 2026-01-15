@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-12-01
@@ -21,8 +23,6 @@
  * 3. 테마 관리: 테마 변경 버튼으로 라이트/다크 모드 전환
  * 4. 반응형 디자인: 사이드바 토글 버튼으로 모바일 환경 대응
  */
-
-import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import '../styles/Sidebar.css';
 

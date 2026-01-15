@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-10-15
@@ -5,8 +7,6 @@
  * 기능 : 오디오 증폭 컴포넌트
  * ---------
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/AudioAmplifier.css';
 
 function AudioAmplifier() {

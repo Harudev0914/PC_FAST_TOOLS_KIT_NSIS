@@ -1,3 +1,5 @@
+import React, { useState } from 'react';
+
 /**
  * ---------
  * 2025-08-20
@@ -5,8 +7,6 @@
  * 기능 : Windows Boost 컴포넌트
  * ---------
  */
-
-import React, { useState } from 'react';
 import '../styles/WindowsBoost.css';
 
 function WindowsBoost() {

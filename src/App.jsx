@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-07-20
@@ -28,8 +30,6 @@
  * 4. 에러 처리: ErrorBoundary로 컴포넌트 에러 처리, 에러 발생 시 Error500 페이지 표시
  * 5. 상태 관리: useState로 API 준비 상태, 로딩 상태, 에러 상태 관리
  */
-
-import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Error404 from './components/Error404';

@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-11-15
@@ -22,8 +24,6 @@
  * 5. 에러 처리: try-catch로 모든 API 호출 에러 처리
  * 6. 메모리 관리: setInterval 정리 (cleanup 함수)로 메모리 누수 방지
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/MemoryOptimizer.css';
 
 function MemoryOptimizer() {

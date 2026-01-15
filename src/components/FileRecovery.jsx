@@ -1,3 +1,5 @@
+import React, { useState } from 'react';
+
 /**
  * ---------
  * 2025-11-01
@@ -5,8 +7,6 @@
  * 기능 : 파일 복구 컴포넌트
  * ---------
  */
-
-import React, { useState } from 'react';
 import '../styles/FileRecovery.css';
 
 function FileRecovery() {

@@ -1,3 +1,5 @@
+import React, { useState, useRef, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-10-01
@@ -5,8 +7,6 @@
  * 기능 : 색상 선택기 컴포넌트
  * ---------
  */
-
-import React, { useState, useRef, useEffect } from 'react';
 import '../styles/ColorPicker.css';
 
 const presetColors = [

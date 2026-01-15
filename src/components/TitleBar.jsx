@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-10-05
@@ -17,8 +19,6 @@
  * 2. 옵셔널 체이닝: window.electronAPI?.window로 API 존재 여부 확인 후 호출
  * 3. 사용자 인터페이스: 커스텀 타이틀 바로 프레임리스 윈도우 제어
  */
-
-import React from 'react';
 import '../styles/TitleBar.css';
 
 function TitleBar() {

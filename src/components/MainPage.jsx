@@ -1,3 +1,5 @@
+import React, { useState, useEffect, useRef } from 'react';
+
 /**
  * ---------
  * 2025-09-25
@@ -30,8 +32,6 @@
  * 4. 에러 처리: try-catch로 모든 API 호출 에러 처리
  * 5. 상태 관리: useState로 UI 상태 및 최적화 상태 관리
  */
-
-import React, { useState, useEffect, useRef } from 'react';
 import TitleBar from './TitleBar';
 import SmartOptimization from './SmartOptimization';
 import WindowsBoost from './WindowsBoost';

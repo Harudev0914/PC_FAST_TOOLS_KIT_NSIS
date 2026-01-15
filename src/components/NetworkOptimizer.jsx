@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-08-15
@@ -30,8 +32,6 @@
  * 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
  * 7. 메모리 관리: setInterval 정리 (cleanup 함수)로 메모리 누수 방지
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/NetworkOptimizer.css';
 
 function NetworkOptimization() {

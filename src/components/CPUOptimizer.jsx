@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+
 /**
  * ---------
  * 2025-09-15
@@ -26,8 +28,6 @@
  * 5. 에러 처리: try-catch로 모든 API 호출 에러 처리
  * 6. 상태 관리: useState로 최적화 상태 및 결과 관리
  */
-
-import React, { useState, useEffect } from 'react';
 import '../styles/CPUOptimizer.css';
 
 function CPUOptimizer() {

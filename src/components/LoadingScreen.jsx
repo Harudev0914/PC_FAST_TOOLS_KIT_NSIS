@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-10-10
@@ -17,8 +19,6 @@
  * 3. 사용자 경험: 앱 로드 중 사용자에게 시각적 피드백 제공
  * 4. 브랜드 인식: 일관된 브랜딩으로 사용자 경험 향상
  */
-
-import React from 'react';
 import '../styles/LoadingScreen.css';
 
 function LoadingScreen() {
