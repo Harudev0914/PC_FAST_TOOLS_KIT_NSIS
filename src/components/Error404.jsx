@@ -1,3 +1,5 @@
+import React from 'react';
+
 /**
  * ---------
  * 2025-08-25
@@ -5,8 +7,6 @@
  * 기능 : 404 오류 페이지 컴포넌트
  * ---------
  */
-
-import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import '../styles/ErrorPages.css';
 

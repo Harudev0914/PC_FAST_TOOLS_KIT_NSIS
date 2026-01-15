@@ -1,3 +1,5 @@
+import React, { useEffect, useState } from 'react';
+
 /**
  * ---------
  * 2025-08-10
@@ -5,8 +7,6 @@
  * 기능 : 네트워크 오류 페이지 컴포넌트
  * ---------
  */
-
-import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import '../styles/ErrorPages.css';
 
