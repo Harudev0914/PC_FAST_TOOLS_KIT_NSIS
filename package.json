@@ -3,14 +3,17 @@
   "version": "1.0.0",
   "description": "PC Optimization Tool - Computer Cleaner, Memory Optimizer, Gaming Mode and more",
   "main": "electron/main.js",
+  "author": "KR_Tuki",
+  "homepage": "./",
   "scripts": {
     "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "dev": "vite",
     "build": "vite build",
     "electron": "electron .",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "dist": "electron-builder",
-    "dist:win": "electron-builder --win"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "pack": "npm run build && electron-builder --dir"
   },
   "keywords": [
     "pc-optimizer",
@@ -18,7 +21,6 @@
     "memory-optimizer",
     "gaming-mode"
   ],
-  "author": "",
   "license": "MIT",
   "dependencies": {
     "react": "^18.2.0",

@@ -1,17 +1,24 @@
 appId: com.pcoptimizer.app
 productName: PC Optimizer
 directories:
-  output: dist
+  output: dist-installer
   buildResources: build
 files:
   - electron/**/*
   - dist/**/*
   - package.json
+  - LICENSE
   - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
   - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
   - "!**/node_modules/*.d.ts"
   - "!**/node_modules/.bin"
   - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+  - "!**/src/**/*"
+  - "!**/public/**/*"
+  - "!**/vite.config.js"
+  - "!**/.git/**/*"
+  - "!**/.vscode/**/*"
+  - "!**/test*.html"
 win:
   target:
     - target: nsis
@@ -19,12 +26,15 @@ win:
         - x64
   # icon: build/icon.ico  # Optional: Add icon file if available
   requestedExecutionLevel: requireAdministrator
+  artifactName: ${productName}-${version}-Setup.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: PC Optimizer
+  displayLanguageSelector: true
   # installerIcon: build/icon.ico  # Optional
   # uninstallerIcon: build/icon.ico  # Optional
   # installerHeaderIcon: build/icon.ico  # Optional
