@@ -3,6 +3,27 @@
 개발자 : KR_Tuki
 기능 : 로딩 화면 HTML 파일
 --------- -->
+
+<!-- @loading.html (1-122) -->
+<!-- 날짜: 2025-12-10 -->
+<!-- HTML 요소 설명: -->
+<!-- - <html lang="ko">: HTML 문서 루트 요소, 한국어 설정 -->
+<!-- - <head>: 문서 메타데이터 영역 (문자 인코딩, 뷰포트, 제목, 스타일) -->
+<!-- - <style>: 인라인 CSS 스타일. 로딩 화면 스타일링에 사용 -->
+<!--   사용 예: .container - 중앙 정렬 컨테이너, .card - 카드 스타일, .status - 상태 표시 스타일 -->
+<!-- - <body>: 문서 본문 영역, 로딩 상태 표시 UI 포함 -->
+<!-- - <script>: JavaScript 코드. Electron API 상태 확인 및 React 앱 로딩 상태 표시 -->
+<!-- 변수 설명: -->
+<!--   - checkAPI(): Electron API 사용 가능 여부 확인 함수 -->
+<!--   - window.electronAPI: Electron API 객체 (preload.js에서 노출) -->
+<!--   - apiStatus, apiText: API 상태 표시 DOM 요소 -->
+<!--   - react-status: React 앱 로딩 상태 표시 DOM 요소 -->
+<!-- 기능 원리: -->
+<!-- 1. Electron 초기화 확인: Electron 프로세스가 정상 작동하는지 확인 -->
+<!-- 2. Electron API 상태 확인: window.electronAPI 존재 여부 확인 (2초마다 체크) -->
+<!-- 3. React 앱 로딩 상태 표시: message 이벤트를 통해 React 앱 로딩 상태 업데이트 -->
+<!-- 4. 사용자 피드백: 시각적 상태 표시 (✓ 정상, ✗ 오류) -->
+<!-- 5. DOM 이벤트: DOMContentLoaded 이벤트 또는 이미 로드된 경우 즉시 API 확인 시작 -->
 <!DOCTYPE html>
 <html lang="ko">
 <head>
