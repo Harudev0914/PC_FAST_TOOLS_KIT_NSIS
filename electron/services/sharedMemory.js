@@ -54,7 +54,12 @@ class SharedMemoryAllocator {
     try {
       // Windows Memory-Mapped File 생성
       // PowerShell을 사용하여 CreateFileMapping 구현
+      // 변수를 안전하게 이스케이프 처리
+      const escapedName = this.name.replace(/'/g, "''").replace(/\$/g, '`$');
       const psScript = `
+$name = '${escapedName}';
+$size = ${this.size};
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -90,9 +95,7 @@ public class SharedMemory {
   public const uint FILE_MAP_ALL_ACCESS = 0xF001F;
   public const uint INVALID_HANDLE_VALUE = 0xFFFFFFFF;
 }
-
-$name = "${this.name}";
-$size = ${this.size};
+'@
 
 try {
   $handle = [SharedMemory]::CreateFileMapping(
@@ -121,6 +124,7 @@ try {
   if ($view -eq [IntPtr]::Zero) {
     $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error();
     Write-Host "ERROR:$errorCode" -NoNewline
+    $handle.Dispose()
     exit 1
   }
 
@@ -132,7 +136,6 @@ try {
   Write-Host "ERROR:Exception" -NoNewline
   exit 1
 }
-'@
       `.trim();
 
       const tempScript = path.join(os.tmpdir(), `shm_create_${Date.now()}.ps1`);
@@ -217,7 +220,11 @@ try {
       this.baseAddress = parseInt(metadata.address);
 
       // PowerShell을 사용하여 OpenFileMapping 구현
+      // 변수를 안전하게 이스케이프 처리
+      const escapedName = this.name.replace(/'/g, "''").replace(/\$/g, '`$');
       const psScript = `
+$name = '${escapedName}';
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -248,8 +255,7 @@ public class SharedMemory {
 
   public const uint FILE_MAP_ALL_ACCESS = 0xF001F;
 }
-
-$name = "${this.name}";
+'@
 
 try {
   $handle = [SharedMemory]::OpenFileMapping(
@@ -275,6 +281,7 @@ try {
   if ($view -eq [IntPtr]::Zero) {
     $errorCode = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error();
     Write-Host "ERROR:$errorCode" -NoNewline
+    $handle.Dispose()
     exit 1
   }
 
@@ -286,7 +293,6 @@ try {
   Write-Host "ERROR:Exception" -NoNewline
   exit 1
 }
-'@
       `.trim();
 
       const tempScript = path.join(os.tmpdir(), `shm_open_${Date.now()}.ps1`);
@@ -365,7 +371,13 @@ try {
       fs.writeFileSync(tempDataFile, buffer);
 
       // PowerShell을 통해 shared memory에 복사
+      // 변수를 안전하게 이스케이프 처리
+      const escapedDataFile = tempDataFile.replace(/'/g, "''").replace(/\$/g, '`$');
       const psScript = `
+$baseAddress = [IntPtr]::new(${this.baseAddress});
+$dataFile = '${escapedDataFile}';
+$offset = ${offset};
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -384,10 +396,7 @@ public class SharedMemory {
   [DllImport("kernel32.dll")]
   public static extern IntPtr GetCurrentProcess();
 }
-
-$baseAddress = [IntPtr]::new(${this.baseAddress});
-$dataFile = "${tempDataFile}";
-$offset = ${offset};
+'@
 
 try {
   $data = [System.IO.File]::ReadAllBytes($dataFile);
@@ -416,7 +425,6 @@ try {
     Remove-Item $dataFile -Force
   }
 }
-'@
       `.trim();
 
       const tempScript = path.join(os.tmpdir(), `shm_write_${Date.now()}.ps1`);
@@ -478,7 +486,14 @@ try {
     }
 
     try {
+      const outputFile = path.join(os.tmpdir(), `shm_read_${Date.now()}.dat`);
+      const escapedOutputFile = outputFile.replace(/'/g, "''").replace(/\$/g, '`$');
       const psScript = `
+$baseAddress = [IntPtr]::new(${this.baseAddress});
+$offset = ${offset};
+$length = ${length};
+$outputFile = '${escapedOutputFile}';
+
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
@@ -497,11 +512,7 @@ public class SharedMemory {
   [DllImport("kernel32.dll")]
   public static extern IntPtr GetCurrentProcess();
 }
-
-$baseAddress = [IntPtr]::new(${this.baseAddress});
-$offset = ${offset};
-$length = ${length};
-$outputFile = "${path.join(os.tmpdir(), `shm_read_${Date.now()}.dat`)}";
+'@
 
 try {
   $targetAddress = [IntPtr]::new($baseAddress.ToInt64() + $offset);
@@ -527,7 +538,6 @@ try {
 } catch {
   Write-Host "ERROR:Exception" -NoNewline
 }
-'@
       `.trim();
 
       const tempScript = path.join(os.tmpdir(), `shm_read_${Date.now()}.ps1`);
@@ -560,18 +570,18 @@ try {
             throw new Error('Invalid SUCCESS response format');
           }
           const readBytes = parseInt(successMatch[1]);
-          const outputFile = successMatch[2].trim();
+          const outputFilePath = successMatch[2].trim();
           
           if (isNaN(readBytes)) {
             throw new Error('Invalid read bytes in SUCCESS response');
           }
           
-          if (!fs.existsSync(outputFile)) {
-            throw new Error(`Output file not found: ${outputFile}`);
+          if (!fs.existsSync(outputFilePath)) {
+            throw new Error(`Output file not found: ${outputFilePath}`);
           }
           
-          const data = fs.readFileSync(outputFile);
-          fs.unlinkSync(outputFile);
+          const data = fs.readFileSync(outputFilePath);
+          fs.unlinkSync(outputFilePath);
           
           return { success: true, data, read: readBytes };
         }
