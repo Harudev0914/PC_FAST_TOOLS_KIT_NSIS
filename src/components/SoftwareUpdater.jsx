@@ -1,8 +1,10 @@
-// ---------
-// 2025-11-20
-// 개발자 : KR_Tuki
-// 기능 : 소프트웨어 업데이터 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-11-20
+ * 개발자 : KR_Tuki
+ * 기능 : 소프트웨어 업데이터 컴포넌트
+ * ---------
+ */
 
 import React, { useState, useEffect } from 'react';
 import '../styles/SoftwareUpdater.css';

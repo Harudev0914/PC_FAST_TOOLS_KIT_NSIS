@@ -1,8 +1,10 @@
-// ---------
-// 2025-08-20
-// 개발자 : KR_Tuki
-// 기능 : Windows Boost 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-08-20
+ * 개발자 : KR_Tuki
+ * 기능 : Windows Boost 컴포넌트
+ * ---------
+ */
 
 import React, { useState } from 'react';
 import '../styles/WindowsBoost.css';

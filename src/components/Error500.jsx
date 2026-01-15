@@ -1,8 +1,10 @@
-// ---------
-// 2025-09-01
-// 개발자 : KR_Tuki
-// 기능 : 500 오류 페이지 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-09-01
+ * 개발자 : KR_Tuki
+ * 기능 : 500 오류 페이지 컴포넌트
+ * ---------
+ */
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';

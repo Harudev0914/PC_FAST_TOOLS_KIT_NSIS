@@ -1,8 +1,10 @@
-// ---------
-// 2025-11-01
-// 개발자 : KR_Tuki
-// 기능 : 파일 복구 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-11-01
+ * 개발자 : KR_Tuki
+ * 기능 : 파일 복구 컴포넌트
+ * ---------
+ */
 
 import React, { useState } from 'react';
 import '../styles/FileRecovery.css';

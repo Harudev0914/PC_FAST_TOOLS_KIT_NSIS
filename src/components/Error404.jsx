@@ -1,8 +1,10 @@
-// ---------
-// 2025-08-25
-// 개발자 : KR_Tuki
-// 기능 : 404 오류 페이지 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-08-25
+ * 개발자 : KR_Tuki
+ * 기능 : 404 오류 페이지 컴포넌트
+ * ---------
+ */
 
 import React from 'react';
 import { useNavigate } from 'react-router-dom';

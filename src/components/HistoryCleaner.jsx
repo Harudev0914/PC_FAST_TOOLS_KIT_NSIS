@@ -1,8 +1,10 @@
-// ---------
-// 2025-11-05
-// 개발자 : KR_Tuki
-// 기능 : 기록 자동삭제 컴포넌트
-// ---------
+/**
+ * ---------
+ * 2025-11-05
+ * 개발자 : KR_Tuki
+ * 기능 : 기록 자동삭제 컴포넌트
+ * ---------
+ */
 
 import React, { useState, useEffect } from 'react';
 import '../styles/HistoryCleaner.css';
