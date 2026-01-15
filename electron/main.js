@@ -170,11 +170,10 @@ function createWindow() {
       mainWindow.show();
     });
     
-    // 개발 모드에서도 DevTools 자동 열기 비활성화
-    // 필요시 수동으로 F12 또는 Ctrl+Shift+I로 열 수 있음
-    // if (isDev) {
-    //   mainWindow.webContents.openDevTools();
-    // }
+    // 개발 모드에서 DevTools 자동 열기 (디버깅용)
+    if (isDev) {
+      mainWindow.webContents.openDevTools();
+    }
     
     // 창이 생성되자마자 즉시 URL 로드 (Electron welcome 화면 방지)
     // did-finish-load 이벤트 전에 URL을 로드하여 welcome 화면이 나타나지 않도록 함
