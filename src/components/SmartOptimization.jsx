@@ -4,6 +4,34 @@
 // 기능 : 스마트 최적화 컴포넌트
 // ---------
 
+// @SmartOptimization.jsx (1-2942)
+// 날짜: 2025-08-01
+// Import 모듈 설명:
+// - react (useState, useEffect, useRef): React 훅. 상태 관리, 생명주기, DOM 참조에 사용
+//   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리, useRef() - Canvas DOM 참조
+// - ColorPicker: 색상 선택기 컴포넌트. 차트 색상 커스터마이징에 사용
+// 변수 설명:
+//   - selectedComponent: 현재 선택된 컴포넌트 ('cpu', 'memory', 'disk', 'ethernet', 'wifi', 'gpu')
+//   - optimizing: 최적화 진행 상태 (boolean)
+//   - optimizeResult: 최적화 결과 객체
+//   - optimizeProgress: 최적화 진행률 ({ percent: number, currentTask: string })
+//   - optimizingComponent: 현재 최적화 중인 컴포넌트 이름
+//   - optimizationCompleted: 최적화 완료된 컴포넌트 객체
+//   - adminPermissionEnabled: 관리자 권한 활성화 여부 (boolean)
+//   - isAdmin: 관리자 권한 상태 (boolean)
+//   - chartColors: 차트 색상 설정 객체 (컴포넌트별 색상)
+//   - historyData: 히스토리 데이터 객체 (CPU, 메모리, 네트워크, GPU 사용률 시계열)
+//   - canvasRefs: Canvas 요소 참조 객체 (컴포넌트별 Canvas DOM 참조)
+//   - loadGlobalState/saveGlobalState: 전역 상태 저장/로드 (window 객체 활용)
+// 기능 원리:
+// 1. 통합 최적화: CPU, 메모리, 디스크, 네트워크, GPU를 한 번에 최적화
+// 2. 실시간 차트: Canvas API로 실시간 시스템 통계 차트 렌더링 (updateStats, drawChart useCallback으로 메모이제이션)
+// 3. 진행률 표시: 최적화 진행률 및 현재 작업 표시
+// 4. 전역 상태 관리: window 객체를 활용한 상태 영속화 (페이지 새로고침 시에도 상태 유지)
+// 5. 관리자 권한 확인: permissions API로 관리자 권한 확인 및 요청
+// 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
+// 7. 성능 최적화: useCallback으로 함수 메모이제이션, 히스토리 데이터 크기 제한
+
 import React, { useState, useEffect, useRef } from 'react';
 import ColorPicker from './ColorPicker';
 import '../styles/SmartOptimization.css';
