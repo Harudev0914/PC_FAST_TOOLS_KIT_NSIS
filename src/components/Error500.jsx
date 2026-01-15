@@ -1,6 +1,4 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import '../styles/ErrorPages.css';
 
 /**
  * ---------
@@ -27,6 +25,8 @@ import '../styles/ErrorPages.css';
  * 3. 오류 상세 정보: 토글 버튼으로 오류 메시지 및 컴포넌트 스택 표시/숨김
  * 4. 디스코드 연락처: 개발자 연락처 정보 표시
  */
+import { useNavigate } from 'react-router-dom';
+import '../styles/ErrorPages.css';
 
 function Error500({ error, errorInfo }) {
   const navigate = useNavigate();
