@@ -1,12 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-
-/**
- * ---------
- * 2025-10-01
- * 개발자 : KR_Tuki
- * 기능 : 색상 선택기 컴포넌트
- * ---------
- */
 import '../styles/ColorPicker.css';
 
 const presetColors = [

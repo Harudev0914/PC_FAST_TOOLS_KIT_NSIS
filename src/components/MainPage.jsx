@@ -1,37 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-/**
- * ---------
- * 2025-09-25
- * 개발자 : KR_Tuki
- * 기능 : 메인 페이지 컴포넌트
- * ---------
- * @MainPage.jsx (1-603)
- * 날짜: 2025-09-25
- * Import 모듈 설명:
- * - react (useState, useEffect, useRef): React 훅. 상태 관리, 생명주기, DOM 참조에 사용
- *   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리, useRef() - DOM 요소 참조
- * - TitleBar: 타이틀 바 컴포넌트 (창 컨트롤, 최소화/최대화/닫기)
- * - SmartOptimization: 스마트 최적화 컴포넌트
- * - WindowsBoost: Windows 부스트 컴포넌트
- * - DeltaForceCleaner: Delta Force 클리너 컴포넌트
- * - SoundBoost: 사운드 부스트 컴포넌트
- * - GameMode: 게임 모드 컴포넌트
- * 변수 설명:
- *   - selectedMenu: 현재 선택된 메뉴 항목 ('smart', 'windowsboost', 'sound', 'slim', 'optiwin')
- *   - fastPingMenuOpen: Fast Ping 메뉴 열림 상태 (boolean)
- *   - fastPingOptimizing: Fast Ping 최적화 진행 상태 (boolean)
- *   - optimizeProgress: 최적화 진행률 ({ percent: number, currentTask: string })
- *   - optimizeResult: 최적화 결과 객체
- *   - adminPermissionEnabled: 관리자 권한 활성화 여부 (boolean)
- *   - menuItems: 메뉴 항목 배열 (id, label, icon 속성 포함)
- * 기능 원리:
- * 1. 메뉴 기반 페이지 전환: selectedMenu 상태로 현재 표시할 컴포넌트 결정
- * 2. Fast Ping 최적화: 네트워크 지연 최소화를 위한 게임 모드 최적화
- * 3. 관리자 권한 확인: permissions API로 관리자 권한 상태 확인 및 표시
- * 4. 에러 처리: try-catch로 모든 API 호출 에러 처리
- * 5. 상태 관리: useState로 UI 상태 및 최적화 상태 관리
- */
 import TitleBar from './TitleBar';
 import SmartOptimization from './SmartOptimization';
 import WindowsBoost from './WindowsBoost';

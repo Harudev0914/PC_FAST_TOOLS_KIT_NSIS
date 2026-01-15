@@ -1,37 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
-/**
- * ---------
- * 2025-08-15
- * 개발자 : KR_Tuki
- * 기능 : 네트워크 최적화 컴포넌트
- * ---------
- * @NetworkOptimizer.jsx (1-300)
- * 날짜: 2025-08-15
- * Import 모듈 설명:
- * - react (useState, useEffect): React 훅. 상태 관리 및 생명주기 처리에 사용
- *   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리 (통계 조회, API 감지 등)
- * 변수 설명:
- *   - stats: 네트워크 통계 정보 (송신/수신 바이트, 속도 등)
- *   - optimizing: 네트워크 최적화 진행 상태 (boolean)
- *   - pinging: Ping 테스트 진행 상태 (boolean)
- *   - pingResult: Ping 테스트 결과 객체
- *   - optimizeResult: 네트워크 최적화 결과 객체
- *   - pingHost: Ping 테스트 대상 호스트 (기본값: '8.8.8.8')
- *   - availableAPIs: 사용 가능한 네트워크 최적화 API (QUIC, ENet, IOCP)
- *   - detectingAPIs: API 감지 진행 상태 (boolean)
- *   - advancedOptimizing: 고급 최적화 진행 상태 (boolean)
- *   - advancedResult: 고급 최적화 결과 객체
- *   - selectedAPIs: 선택된 최적화 API ({ quic: boolean, enet: boolean, iocp: boolean })
- * 기능 원리:
- * 1. 네트워크 통계 조회: useEffect에서 3초마다 network.getStats() API로 네트워크 통계 조회
- * 2. 네트워크 API 감지: 컴포넌트 마운트 시 networkOptimization.detectAPIs()로 QUIC, ENet, IOCP 감지
- * 3. 기본 네트워크 최적화: network.optimize() API 호출
- * 4. 고급 네트워크 최적화: networkOptimization API로 QUIC, ENet, IOCP 활성화
- * 5. Ping 테스트: network.pingTest() API로 네트워크 지연 측정
- * 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
- * 7. 메모리 관리: setInterval 정리 (cleanup 함수)로 메모리 누수 방지
- */
 import '../styles/NetworkOptimizer.css';
 
 function NetworkOptimization() {

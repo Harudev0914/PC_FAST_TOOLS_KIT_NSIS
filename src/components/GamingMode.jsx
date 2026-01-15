@@ -1,12 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
-/**
- * ---------
- * 2025-11-10
- * 개발자 : KR_Tuki
- * 기능 : 게이밍 모드 컴포넌트
- * ---------
- */
 import '../styles/GamingMode.css';
 
 function GamingMode() {

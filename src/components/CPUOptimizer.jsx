@@ -1,33 +1,4 @@
 import React, { useState, useEffect } from 'react';
-
-/**
- * ---------
- * 2025-09-15
- * 개발자 : KR_Tuki
- * 기능 : CPU 최적화 컴포넌트
- * ---------
- * @CPUOptimizer.jsx (1-300)
- * 날짜: 2025-09-15
- * Import 모듈 설명:
- * - react (useState, useEffect): React 훅. 상태 관리 및 생명주기 처리에 사용
- *   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리 (통계 조회, 라이브러리 감지 등)
- * 변수 설명:
- *   - stats: CPU 통계 정보 (사용률, 코어 수, 온도 등)
- *   - optimizing: CPU 최적화 진행 상태 (boolean)
- *   - optimizeResult: CPU 최적화 결과 객체
- *   - computeOptimizing: Compute 최적화 진행 상태 (boolean)
- *   - computeResult: Compute 최적화 결과 객체
- *   - libraries: 감지된 Compute 라이브러리 정보 (OpenCL, CUDA, Intel oneAPI)
- *   - detectingLibraries: 라이브러리 감지 진행 상태 (boolean)
- *   - isValidValue(): 값 유효성 검사 함수. 'Unknown', '0', 빈 문자열 등을 false로 판단
- * 기능 원리:
- * 1. CPU 통계 조회: useEffect에서 2초마다 systemStats API로 CPU 통계 조회
- * 2. Compute 라이브러리 감지: computeOptimization API로 OpenCL, CUDA, Intel oneAPI 감지
- * 3. CPU 최적화: cpu.optimize() 또는 cpu.optimizeSafe() API 호출
- * 4. Compute 최적화: computeOptimization API로 GPU 가속 최적화
- * 5. 에러 처리: try-catch로 모든 API 호출 에러 처리
- * 6. 상태 관리: useState로 최적화 상태 및 결과 관리
- */
 import '../styles/CPUOptimizer.css';
 
 function CPUOptimizer() {

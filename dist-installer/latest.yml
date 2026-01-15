@@ -1,0 +1,8 @@
+version: 1.0.0
+files:
+  - url: PC-Optimizer-1.0.0-Setup.exe
+    sha512: K7h7ae1mnPNxTXb0ey8QzZuRtAXj372lNnJT0LcmqKe1o7+d3ion4QVyVSmu0e/qcYx3tm15PXXP+3COBPpoCg==
+    size: 78626480
+path: PC-Optimizer-1.0.0-Setup.exe
+sha512: K7h7ae1mnPNxTXb0ey8QzZuRtAXj372lNnJT0LcmqKe1o7+d3ion4QVyVSmu0e/qcYx3tm15PXXP+3COBPpoCg==
+releaseDate: '2026-01-15T04:47:37.875Z'

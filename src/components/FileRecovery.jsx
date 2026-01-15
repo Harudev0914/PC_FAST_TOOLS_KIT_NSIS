@@ -1,12 +1,4 @@
 import React, { useState } from 'react';
-
-/**
- * ---------
- * 2025-11-01
- * 개발자 : KR_Tuki
- * 기능 : 파일 복구 컴포넌트
- * ---------
- */
 import '../styles/FileRecovery.css';
 
 function FileRecovery() {

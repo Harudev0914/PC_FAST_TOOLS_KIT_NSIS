@@ -2,35 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import '../styles/ErrorPages.css';
 
-/**
- * ---------
- * 2025-08-10
- * 개발자 : KR_Tuki
- * 기능 : 네트워크 오류 페이지 컴포넌트
- * ---------
- * @ErrorNetwork.jsx (1-119)
- * 날짜: 2025-08-10
- * Import 모듈 설명:
- * - react (useEffect, useState): React 훅. 컴포넌트 상태 관리 및 생명주기 처리에 사용
- *   사용 예: useState() - 상태 변수 선언, useEffect() - URL 파라미터에서 오류 정보 읽기
- * - react-router-dom (useNavigate, useSearchParams): React 라우팅 훅
- *   사용 예: useNavigate() - 페이지 네비게이션, useSearchParams() - URL 쿼리 파라미터 읽기
- * - '../styles/ErrorPages.css': 오류 페이지 스타일시트
- * 변수 설명:
- *   - propStatusCode: props로 전달받은 HTTP 상태 코드
- *   - propErrorMessage: props로 전달받은 오류 메시지
- *   - statusCode: 현재 표시할 HTTP 상태 코드 (state)
- *   - errorMessage: 현재 표시할 오류 메시지 (state)
- *   - navigate: 페이지 네비게이션 함수 (useNavigate 훅)
- *   - searchParams: URL 쿼리 파라미터 객체 (useSearchParams 훅)
- * 기능 원리:
- * 1. 오류 정보 수집: props 또는 URL 쿼리 파라미터에서 오류 정보 읽기
- * 2. 오류 표시: 네트워크 오류를 시각적으로 표시 (SVG 아이콘, 상태 코드별 메시지)
- * 3. 네비게이션: 홈으로 돌아가기, 다시 시도 버튼 제공
- * 4. 상태 코드별 메시지: HTTP 상태 코드에 따라 적절한 오류 제목 및 설명 표시
- * 5. 디스코드 연락처: 개발자 연락처 정보 표시
- */
-
 function ErrorNetwork({ statusCode: propStatusCode, errorMessage: propErrorMessage }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
