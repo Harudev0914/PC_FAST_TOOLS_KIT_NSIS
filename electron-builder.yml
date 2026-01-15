@@ -1,0 +1,32 @@
+appId: com.pcoptimizer.app
+productName: PC Optimizer
+directories:
+  output: dist
+  buildResources: build
+files:
+  - electron/**/*
+  - dist/**/*
+  - package.json
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/*.d.ts"
+  - "!**/node_modules/.bin"
+  - "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}"
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  # icon: build/icon.ico  # Optional: Add icon file if available
+  requestedExecutionLevel: requireAdministrator
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: PC Optimizer
+  # installerIcon: build/icon.ico  # Optional
+  # uninstallerIcon: build/icon.ico  # Optional
+  # installerHeaderIcon: build/icon.ico  # Optional
+  license: LICENSE
+  menuCategory: Utilities

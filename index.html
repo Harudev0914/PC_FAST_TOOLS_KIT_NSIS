@@ -1,0 +1,60 @@
+<!-- ---------
+2025-12-05
+개발자 : KR_Tuki
+기능 : 메인 HTML 파일
+--------- -->
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:* http://127.0.0.1:*;" />
+    <title>PC Optimizer</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if (!window.location.protocol.includes('dev') && !window.location.href.includes('localhost')) {
+        Object.defineProperty(window, 'devtools', { get: () => {}, set: () => {} });
+        Object.defineProperty(window, '__REACT_DEVTOOLS_GLOBAL_HOOK__', { get: () => {}, set: () => {} });
+        
+        let devtools = false;
+        const element = new Image();
+        Object.defineProperty(element, 'id', {
+          get: function() {
+            devtools = true;
+            return '';
+          }
+        });
+        setInterval(() => {
+          devtools = false;
+          console.log(element);
+          if (devtools) {
+            document.body.innerHTML = '<h1 style="text-align:center;padding:50px;color:#e74c3c;">보안 정책에 의해 접근이 제한되었습니다.</h1>';
+            window.location.reload();
+          }
+        }, 1000);
+        
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'F12' || 
+              (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'J' || e.key === 'C')) ||
+              (e.ctrlKey && e.key === 'U')) {
+            e.preventDefault();
+            return false;
+          }
+        });
+        
+        document.addEventListener('contextmenu', (e) => {
+          e.preventDefault();
+          return false;
+        });
+        
+        document.addEventListener('selectstart', (e) => {
+          e.preventDefault();
+          return false;
+        });
+      }
+    </script>
+  </body>
+</html>

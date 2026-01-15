@@ -1,0 +1,130 @@
+.memory-stats {
+  margin: 20px 0;
+}
+
+.memory-bar-container {
+  margin-bottom: 20px;
+}
+
+.memory-bar {
+  width: 100%;
+  height: 24px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.app.dark .memory-bar {
+  background-color: #3a3a3a;
+}
+
+.app.light .memory-bar {
+  background-color: #e0e0e0;
+}
+
+.memory-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  transition: width 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 8px;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.memory-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.stats-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.stat-item {
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.app.dark .stat-item {
+  background-color: #2a2a2a;
+  border: 1px solid #3a3a3a;
+}
+
+.app.light .stat-item {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+}
+
+.stat-label {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-bottom: 4px;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.process-list {
+  margin-top: 20px;
+}
+
+.process-header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 100px;
+  gap: 16px;
+  padding: 12px;
+  font-weight: 600;
+  border-bottom: 1px solid;
+}
+
+.app.dark .process-header {
+  border-bottom-color: #3a3a3a;
+}
+
+.app.light .process-header {
+  border-bottom-color: #e0e0e0;
+}
+
+.process-item {
+  display: grid;
+  grid-template-columns: 2fr 1fr 100px;
+  gap: 16px;
+  padding: 12px;
+  border-bottom: 1px solid;
+  transition: background-color 0.2s;
+}
+
+.app.dark .process-item {
+  border-bottom-color: #3a3a3a;
+}
+
+.app.light .process-item {
+  border-bottom-color: #e0e0e0;
+}
+
+.process-item:hover {
+  background-color: rgba(102, 126, 234, 0.1);
+}
+
+.process-name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-memory {
+  font-size: 14px;
+  font-weight: 500;
+}

@@ -1,0 +1,69 @@
+.title-bar {
+  width: 100%;
+  height: 32px;
+  background-color: #14161B;
+  border-bottom: 1px solid #3a3a3a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;
+  user-select: none;
+  z-index: 10000;
+  position: relative;
+}
+
+.title-bar-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.title-bar-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #b0b0b0;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.title-bar-controls {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.title-bar-button {
+  width: 46px;
+  height: 32px;
+  border: none;
+  background-color: transparent;
+  color: #b0b0b0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, color 0.2s;
+  padding: 0;
+  margin: 0;
+}
+
+.title-bar-button:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.title-bar-button.close-button:hover {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.title-bar-button svg {
+  display: block;
+}

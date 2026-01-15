@@ -1,0 +1,102 @@
+.driver-count {
+  margin-left: auto;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.updates-list {
+  margin-top: 20px;
+}
+
+.update-item {
+  padding: 16px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border: 1px solid;
+}
+
+.app.dark .update-item {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+}
+
+.app.light .update-item {
+  background-color: #ffffff;
+  border-color: #e0e0e0;
+}
+
+.update-info {
+  margin-bottom: 8px;
+}
+
+.update-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.update-status {
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.drivers-list {
+  margin-top: 20px;
+}
+
+.driver-item {
+  padding: 20px;
+  margin-bottom: 16px;
+  border-radius: 8px;
+  border: 1px solid;
+}
+
+.app.dark .driver-item {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+}
+
+.app.light .driver-item {
+  background-color: #ffffff;
+  border-color: #e0e0e0;
+}
+
+.driver-info {
+  margin-bottom: 12px;
+}
+
+.driver-name {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.driver-details {
+  display: flex;
+  gap: 16px;
+  font-size: 14px;
+  opacity: 0.7;
+  flex-wrap: wrap;
+}
+
+.driver-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.driver-status.ok {
+  background-color: rgba(46, 204, 113, 0.2);
+  color: #2ecc71;
+}
+
+.driver-status.error {
+  background-color: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.driver-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}

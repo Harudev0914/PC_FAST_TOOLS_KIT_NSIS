@@ -1,0 +1,84 @@
+.color-picker-container {
+  position: relative;
+  display: inline-block;
+}
+
+.color-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  background-color: #14161B;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.color-picker-trigger:hover {
+  border-color: #3a3a3a;
+  background-color: #1a1a1a;
+}
+
+.color-preview {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px solid #2a2a2a;
+  flex-shrink: 0;
+}
+
+.color-label {
+  font-size: 12px;
+  color: #7E8087;
+}
+
+.color-picker-dropdown {
+  position: absolute;
+  right: 0;
+  background-color: #14161B;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 12px;
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  max-width: 200px;
+}
+
+.color-picker-dropdown.dropdown-top {
+  bottom: 100%;
+  margin-bottom: 4px;
+}
+
+.color-picker-dropdown.dropdown-bottom {
+  top: 100%;
+  margin-top: 4px;
+}
+
+.preset-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+
+.color-option {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: all 0.2s;
+}
+
+.color-option:hover {
+  border-color: #7E8087;
+  transform: scale(1.1);
+}
+
+.color-option.selected {
+  border-color: #FF003F;
+  border-width: 3px;
+  box-shadow: 0 0 8px rgba(255, 0, 63, 0.5);
+}
+

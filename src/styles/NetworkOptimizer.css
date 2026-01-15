@@ -1,0 +1,199 @@
+.optimize-results {
+  margin-top: 20px;
+}
+
+.optimize-results > div {
+  margin-bottom: 8px;
+}
+
+.ping-controls {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+  align-items: center;
+}
+
+.input-field {
+  flex: 1;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 14px;
+}
+
+.app.dark .input-field {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+  color: #e0e0e0;
+}
+
+.app.light .input-field {
+  background-color: #ffffff;
+  border-color: #e0e0e0;
+  color: #333;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.ping-results {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.app.dark .ping-results {
+  background-color: #2a2a2a;
+  border: 1px solid #3a3a3a;
+}
+
+.app.light .ping-results {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+}
+
+.ping-stat {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.ping-stat strong {
+  color: #667eea;
+}
+
+.ping-times {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.app.dark .ping-times {
+  border-top-color: #3a3a3a;
+}
+
+.app.light .ping-times {
+  border-top-color: #e0e0e0;
+}
+
+/* 고급 네트워크 API 스타일 */
+.api-status {
+  margin: 16px 0;
+  padding: 16px;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+}
+
+.api-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.api-item:last-child {
+  border-bottom: none;
+}
+
+.api-name {
+  flex: 1;
+  font-weight: 500;
+  color: #e0e0e0;
+}
+
+.api-status-badge {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.api-status-badge.available {
+  background-color: #2ecc71;
+  color: #fff;
+}
+
+.api-status-badge.unavailable {
+  background-color: #e74c3c;
+  color: #fff;
+}
+
+.api-version {
+  font-size: 12px;
+  color: #888;
+}
+
+.api-selection {
+  margin: 16px 0;
+  padding: 16px;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #2a2a2a;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+  color: #e0e0e0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkbox-label span {
+  flex: 1;
+}
+
+.operations-list {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #1a1a1a;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.operation-item {
+  padding: 4px 0;
+  color: #2ecc71;
+  font-size: 14px;
+}
+
+.errors-list {
+  margin-top: 12px;
+  padding: 12px;
+  background-color: #2a1a1a;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.error-item {
+  padding: 4px 0;
+  color: #e74c3c;
+  font-size: 14px;
+}
+
+.loading-message {
+  padding: 16px;
+  text-align: center;
+  color: #888;
+}
