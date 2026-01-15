@@ -3,18 +3,21 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      jsxRuntime: 'automatic',
+      jsxImportSource: 'react',
+    }),
+  ],
   base: './',
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    minify: 'esbuild',
   },
   esbuild: {
     charset: 'utf8',
-    legalComments: 'none',
-    minifyIdentifiers: true,
-    minifySyntax: true,
-    minifyWhitespace: true,
+    legalComments: 'inline',
   },
   server: {
     port: 5173,

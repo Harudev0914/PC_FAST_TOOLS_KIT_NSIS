@@ -1,26 +1,27 @@
-// ---------
-// 2025-11-15
-// 개발자 : KR_Tuki
-// 기능 : 메모리 최적화 컴포넌트
-// ---------
-
-// @MemoryOptimizer.jsx (1-149)
-// 날짜: 2025-11-15
-// Import 모듈 설명:
-// - react (useState, useEffect): React 훅. 상태 관리 및 생명주기 처리에 사용
-//   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리 (통계 조회 등)
-// 변수 설명:
-//   - stats: 메모리 통계 정보 (사용량, 전체, 여유, 사용률 등)
-//   - processes: 프로세스 목록 (메모리 사용량 상위)
-//   - optimizing: 메모리 최적화 진행 상태 (boolean)
-//   - optimizeResult: 메모리 최적화 결과 객체
-// 기능 원리:
-// 1. 메모리 통계 조회: useEffect에서 2초마다 Promise.all()로 메모리 통계와 프로세스 목록 병렬 조회
-// 2. 메모리 최적화: memory.optimize() API 호출로 메모리 최적화 수행
-// 3. 프로세스 종료: memory.killProcess() API로 특정 프로세스 강제 종료
-// 4. 데이터 포맷팅: formatBytes() 함수로 바이트 단위를 읽기 쉬운 형식으로 변환
-// 5. 에러 처리: try-catch로 모든 API 호출 에러 처리
-// 6. 메모리 관리: setInterval 정리 (cleanup 함수)로 메모리 누수 방지
+/**
+ * ---------
+ * 2025-11-15
+ * 개발자 : KR_Tuki
+ * 기능 : 메모리 최적화 컴포넌트
+ * ---------
+ * @MemoryOptimizer.jsx (1-149)
+ * 날짜: 2025-11-15
+ * Import 모듈 설명:
+ * - react (useState, useEffect): React 훅. 상태 관리 및 생명주기 처리에 사용
+ *   사용 예: useState() - 상태 변수 선언, useEffect() - 사이드 이펙트 처리 (통계 조회 등)
+ * 변수 설명:
+ *   - stats: 메모리 통계 정보 (사용량, 전체, 여유, 사용률 등)
+ *   - processes: 프로세스 목록 (메모리 사용량 상위)
+ *   - optimizing: 메모리 최적화 진행 상태 (boolean)
+ *   - optimizeResult: 메모리 최적화 결과 객체
+ * 기능 원리:
+ * 1. 메모리 통계 조회: useEffect에서 2초마다 Promise.all()로 메모리 통계와 프로세스 목록 병렬 조회
+ * 2. 메모리 최적화: memory.optimize() API 호출로 메모리 최적화 수행
+ * 3. 프로세스 종료: memory.killProcess() API로 특정 프로세스 강제 종료
+ * 4. 데이터 포맷팅: formatBytes() 함수로 바이트 단위를 읽기 쉬운 형식으로 변환
+ * 5. 에러 처리: try-catch로 모든 API 호출 에러 처리
+ * 6. 메모리 관리: setInterval 정리 (cleanup 함수)로 메모리 누수 방지
+ */
 
 import React, { useState, useEffect } from 'react';
 import '../styles/MemoryOptimizer.css';
