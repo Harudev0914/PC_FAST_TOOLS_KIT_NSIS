@@ -4,6 +4,25 @@
 // 기능 : 컴퓨터 클리너 컴포넌트
 // ---------
 
+// @Cleaner.jsx (1-170)
+// 날짜: 2025-10-20
+// Import 모듈 설명:
+// - react (useState): React 훅. 상태 관리에 사용
+//   사용 예: useState() - 상태 변수 선언
+// 변수 설명:
+//   - scanning: 파일 스캔 진행 상태 (boolean)
+//   - cleaning: 파일 정리 진행 상태 (boolean)
+//   - scanResults: 스캔 결과 객체 (files, totalSize 등)
+//   - cleanResults: 정리 결과 객체 (cleaned, freed 등)
+//   - options: 정리 옵션 객체 (tempFiles, browserCache, registry, safeDelete)
+// 기능 원리:
+// 1. 파일 스캔: cleaner.scan() API로 정리 가능한 파일 목록 조회
+// 2. 파일 정리: cleaner.clean(options) API로 선택된 파일 정리
+// 3. 옵션 선택: 체크박스로 정리할 항목 선택 (임시 파일, 브라우저 캐시, 레지스트리 등)
+// 4. 진행 상태 표시: scanning, cleaning 상태로 로딩 인디케이터 표시
+// 5. 결과 표시: 스캔/정리 결과를 사용자에게 표시 (정리된 파일 수, 해제된 공간 등)
+// 6. 에러 처리: try-catch로 모든 API 호출 에러 처리
+
 import React, { useState } from 'react';
 import '../styles/Cleaner.css';
 
