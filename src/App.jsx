@@ -46,8 +46,14 @@ function App() {
   useEffect(() => {
     let retries = 0;
     const maxRetries = 50;
+    let timeoutId = null;
+    let isMounted = true;
+    
+    console.log('App useEffect started, checking electronAPI...');
     
     const checkAPI = async () => {
+      if (!isMounted) return;
+      
       if (window.electronAPI) {
         console.log('electronAPI is ready');
         setApiReady(true);
@@ -74,26 +80,82 @@ function App() {
           console.error('Error preloading audio data:', error);
         }
         
-        setTimeout(() => {
-          setShowLoading(false);
+        timeoutId = setTimeout(() => {
+          if (isMounted) {
+            console.log('Setting showLoading to false');
+            setShowLoading(false);
+          }
         }, 1500);
       } else {
         retries++;
+        console.log(`electronAPI check retry ${retries}/${maxRetries}`);
         if (retries < maxRetries) {
           setTimeout(checkAPI, 100);
         } else {
           console.error('electronAPI not available after retries');
-          setError('Electron API를 로드할 수 없습니다. Electron 환경에서 실행 중인지 확인하세요.');
-          setApiReady(true);
-          setShowLoading(false);
+          if (isMounted) {
+            setError('Electron API를 로드할 수 없습니다. Electron 환경에서 실행 중인지 확인하세요.');
+            setApiReady(true);
+            setShowLoading(false);
+          }
         }
       }
     };
+    
+    // 최대 10초 후에는 무조건 로딩 화면 닫기 (폴백)
+    const fallbackTimeout = setTimeout(() => {
+      if (isMounted && showLoading) {
+        console.warn('Loading timeout - forcing show to false');
+        setShowLoading(false);
+        setApiReady(true);
+      }
+    }, 10000);
+    
     checkAPI();
+    
+    return () => {
+      isMounted = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      clearTimeout(fallbackTimeout);
+    };
   }, []);
 
   if (showLoading) {
     return <LoadingScreen />;
+  }
+
+  if (error) {
+    return (
+      <div style={{ 
+        padding: '40px', 
+        textAlign: 'center', 
+        color: '#e74c3c',
+        fontFamily: 'Arial, sans-serif',
+        backgroundColor: '#1a1a1a',
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        <h1>오류 발생</h1>
+        <p>{error}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          style={{
+            marginTop: '20px',
+            padding: '10px 20px',
+            backgroundColor: '#3498db',
+            color: 'white',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          새로고침
+        </button>
+      </div>
+    );
   }
 
   return (

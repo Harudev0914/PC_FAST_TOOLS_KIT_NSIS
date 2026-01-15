@@ -22,8 +22,9 @@ import React from 'react';
 import '../styles/LoadingScreen.css';
 
 function LoadingScreen() {
+  console.log('LoadingScreen rendered');
   return (
-    <div className="loading-screen">
+    <div className="loading-screen" style={{ backgroundColor: '#2a2a2a', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div className="loading-content">
         <div className="brand-container">
           <div className="logo-container">
@@ -37,13 +38,13 @@ function LoadingScreen() {
             </svg>
           </div>
           <div className="brand-info">
-            <h1 className="brand-name">Ptimizer</h1>
-            <p className="brand-version">Version 1.0</p>
+            <h1 className="brand-name" style={{ color: '#b0b0b0', fontSize: '80px', margin: 0 }}>Ptimizer</h1>
+            <p className="brand-version" style={{ color: '#808080', fontSize: '14px', margin: 0 }}>Version 1.0</p>
           </div>
         </div>
       </div>
-      <div className="loading-spinner">
-        <div className="spinner"></div>
+      <div className="loading-spinner" style={{ position: 'absolute', bottom: '40px', right: '40px' }}>
+        <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(176, 176, 176, 0.2)', borderTopColor: '#b0b0b0', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
       </div>
     </div>
   );
