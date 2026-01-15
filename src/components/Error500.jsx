@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import '../styles/ErrorPages.css';
 
 /**
  * ---------
@@ -6,7 +8,7 @@ import React, { useState } from 'react';
  * 개발자 : KR_Tuki
  * 기능 : 500 오류 페이지 컴포넌트
  * ---------
- * @Error500.jsx (1-87)
+ * @Error500.jsx (1-105)
  * 날짜: 2025-09-01
  * Import 모듈 설명:
  * - react (useState): React 훅. 컴포넌트 상태 관리에 사용
@@ -25,8 +27,6 @@ import React, { useState } from 'react';
  * 3. 오류 상세 정보: 토글 버튼으로 오류 메시지 및 컴포넌트 스택 표시/숨김
  * 4. 디스코드 연락처: 개발자 연락처 정보 표시
  */
-import { useNavigate } from 'react-router-dom';
-import '../styles/ErrorPages.css';
 
 function Error500({ error, errorInfo }) {
   const navigate = useNavigate();
