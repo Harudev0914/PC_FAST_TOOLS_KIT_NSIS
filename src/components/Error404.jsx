@@ -1,4 +1,6 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
+import '../styles/ErrorPages.css';
 
 /**
  * ---------
@@ -6,9 +8,20 @@ import React from 'react';
  * 개발자 : KR_Tuki
  * 기능 : 404 오류 페이지 컴포넌트
  * ---------
+ * @Error404.jsx (1-55)
+ * 날짜: 2025-08-25
+ * Import 모듈 설명:
+ * - react: React 라이브러리. 함수형 컴포넌트로 구현
+ * - react-router-dom (useNavigate): React 라우팅 훅. 페이지 네비게이션에 사용
+ *   사용 예: navigate('/') - 홈 페이지로 이동
+ * - '../styles/ErrorPages.css': 오류 페이지 스타일시트
+ * 변수 설명:
+ *   - navigate: 페이지 네비게이션 함수 (useNavigate 훅)
+ * 기능 원리:
+ * 1. 오류 표시: 404 페이지를 찾을 수 없음 오류를 시각적으로 표시 (SVG 아이콘, 메시지)
+ * 2. 네비게이션: 홈으로 돌아가기, 이전 페이지로 돌아가기 버튼 제공
+ * 3. 디스코드 연락처: 개발자 연락처 정보 표시
  */
-import { useNavigate } from 'react-router-dom';
-import '../styles/ErrorPages.css';
 
 function Error404() {
   const navigate = useNavigate();
