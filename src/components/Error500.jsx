@@ -76,30 +76,4 @@ function Error500({ error, errorInfo }) {
   );
 }
 
-/**
- * ---------
- * 2025-09-01
- * 개발자 : KR_Tuki
- * 기능 : 500 오류 페이지 컴포넌트
- * ---------
- * @Error500.jsx (1-105)
- * 날짜: 2025-09-01
- * Import 모듈 설명:
- * - react (useState): React 훅. 컴포넌트 상태 관리에 사용
- *   사용 예: useState(false) - 오류 상세 정보 표시 여부 관리
- * - react-router-dom (useNavigate): React 라우팅 훅. 페이지 네비게이션에 사용
- *   사용 예: navigate('/') - 홈 페이지로 이동
- * - '../styles/ErrorPages.css': 오류 페이지 스타일시트
- * 변수 설명:
- *   - error: 전달받은 오류 객체 (props)
- *   - errorInfo: 전달받은 오류 정보 객체 (props)
- *   - showDetails: 오류 상세 정보 표시 여부 (boolean)
- *   - navigate: 페이지 네비게이션 함수 (useNavigate 훅)
- * 기능 원리:
- * 1. 오류 표시: 500 서버 오류를 시각적으로 표시 (SVG 아이콘, 메시지)
- * 2. 네비게이션: 홈으로 돌아가기, 페이지 새로고침 버튼 제공
- * 3. 오류 상세 정보: 토글 버튼으로 오류 메시지 및 컴포넌트 스택 표시/숨김
- * 4. 디스코드 연락처: 개발자 연락처 정보 표시
- */
-
 export default Error500;
