@@ -4,6 +4,24 @@
 // 기능 : React 앱 진입점
 // ---------
 
+// @main.jsx (1-27)
+// 날짜: 2025-07-25
+// Import 모듈 설명:
+// - react: React 라이브러리. React.StrictMode로 개발 모드에서 잠재적 문제 감지
+// - react-dom/client (ReactDOM): React DOM 렌더링 라이브러리
+//   사용 예: ReactDOM.createRoot() - React 18의 새로운 루트 생성 API, root.render() - 컴포넌트 렌더링
+// - App: 메인 앱 컴포넌트
+// - './styles/index.css': 전역 CSS 스타일
+// 변수 설명:
+//   - rootElement: React 앱이 마운트될 DOM 요소 (document.getElementById('root'))
+//   - root: React 18의 새로운 루트 객체 (ReactDOM.createRoot()로 생성)
+// 기능 원리:
+// 1. DOM 요소 확인: document.getElementById('root')로 마운트 포인트 확인
+// 2. React 루트 생성: ReactDOM.createRoot()로 새로운 루트 생성 (React 18)
+// 3. 컴포넌트 렌더링: root.render()로 App 컴포넌트 렌더링
+// 4. StrictMode: 개발 모드에서 잠재적 문제 감지 (이중 렌더링, deprecated API 사용 등)
+// 5. 에러 처리: root 요소가 없으면 에러 메시지 표시
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
