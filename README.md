@@ -34,7 +34,7 @@ Setup_NSIS/
 ```
 
 ## 에러 핸들링
-
+ 
 에러 처리에 대한 자세한 내용은 코드베이스 내 `src/utils/errorHandler.js`를 참조하세요.
 
 ### 주요 에러 처리 함수
