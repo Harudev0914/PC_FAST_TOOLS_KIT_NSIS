@@ -93,12 +93,9 @@ async function getDevices() {
 
 async function setVolume(deviceId, volume) {
   try {
-    const volumePercent = Math.max(0, Math.min(100, volume));
-    
-    await execAsync(
-      `powershell -Command "$obj = New-Object -ComObject WScript.Shell; $obj.SendKeys([char]175)"`
-    );
-    
+    // [실제 구현] 요청 볼륨(0~100%)을 Core Audio COM으로 실제 반영 (기존 SendKeys는 요청값 무시)
+    const volumePercent = Math.max(0, Math.min(100, Number(volume) || 0));
+    await setMasterVolume(volumePercent / 100);
     return { success: true, volume: volumePercent };
   } catch (error) {
     return { success: false, error: error.message };
@@ -107,25 +104,85 @@ async function setVolume(deviceId, volume) {
 
 async function boost(enabled) {
   try {
+    // [실제 구현] 엔드포인트 볼륨을 실제로 조절 (100% 초과 증폭은 DSP 필요 → 상한 100%)
     if (enabled) {
-      await execAsync(
-        'powershell -Command "Set-AudioDevice -Index 0 -Volume 100"'
-      );
-      
-      await execAsync(
-        'powershell -Command "$audio = Get-AudioDevice; $audio.Volume = 100"'
-      );
-      
+      await setMasterVolume(1.0);
       return { success: true, boosted: true };
-    } else {
-      return { success: true, boosted: false };
     }
+    return { success: true, boosted: false };
   } catch (error) {
-    return { success: true, boosted: enabled, note: 'Using fallback method' };
+    return { success: false, boosted: false, error: error.message };
   }
 }
 
 const SETTINGS_FILE = path.join(os.homedir(), '.ptimizer', 'sound-boost-settings.json');
+
+// [실제 구현] Windows Core Audio(IAudioEndpointVolume) COM으로 기본 재생 장치의 마스터 볼륨을
+// 실제로 읽고/설정한다. 기존 코드는 (a) SendKeys로 볼륨업 키 1회만 눌러 요청 볼륨을 무시하거나
+// (b) 미설치 모듈(AudioDeviceCmdlets)에 의존하거나 (c) IAudioEndpointVolume vtable 슬롯을 잘못
+// 선언해(SetMasterVolumeLevelScalar를 첫 메서드로 둠 → 실제로는 RegisterControlChangeNotify 호출)
+// 볼륨이 바뀌지 않았다. 아래는 vtable 순서를 정확히 맞춘 구현이며, 인용부호 문제를 피하려 임시
+// .ps1 파일로 실행한다.
+const AUDIO_COM_TYPE = `$code = @'
+using System;
+using System.Runtime.InteropServices;
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")] class MMDevEnum { }
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+  int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+  int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppDevice);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+  int Activate([MarshalAs(UnmanagedType.LPStruct)] Guid iid, int dwClsCtx, IntPtr pParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
+}
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+  int RegisterControlChangeNotify(IntPtr n);
+  int UnregisterControlChangeNotify(IntPtr n);
+  int GetChannelCount(out int c);
+  int SetMasterVolumeLevel(float level, [MarshalAs(UnmanagedType.LPStruct)] Guid ctx);
+  int SetMasterVolumeLevelScalar(float level, [MarshalAs(UnmanagedType.LPStruct)] Guid ctx);
+  int GetMasterVolumeLevel(out float level);
+  int GetMasterVolumeLevelScalar(out float level);
+}
+public static class AudioCtl {
+  static IAudioEndpointVolume Ep() {
+    IMMDeviceEnumerator en = (IMMDeviceEnumerator)(new MMDevEnum());
+    IMMDevice dev; en.GetDefaultAudioEndpoint(0, 1, out dev);
+    object o; dev.Activate(typeof(IAudioEndpointVolume).GUID, 1, IntPtr.Zero, out o);
+    return (IAudioEndpointVolume)o;
+  }
+  public static void SetVol(float v) { Ep().SetMasterVolumeLevelScalar(v, Guid.Empty); }
+  public static float GetVol() { float v; Ep().GetMasterVolumeLevelScalar(out v); return v; }
+}
+'@
+Add-Type -TypeDefinition $code -Language CSharp`;
+
+async function runAudioPs(body) {
+  const script = `${AUDIO_COM_TYPE}\n${body}`;
+  const tmp = path.join(os.tmpdir(), `audio_ctl_${process.pid}_${body.length}.ps1`);
+  await fs.writeFile(tmp, script, 'utf8');
+  try {
+    const { stdout } = await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tmp}"`, { timeout: 10000, encoding: 'utf8' });
+    return stdout;
+  } finally {
+    try { await fs.unlink(tmp); } catch (e) {}
+  }
+}
+
+// scalar: 0.0 ~ 1.0
+async function setMasterVolume(scalar) {
+  const v = Math.max(0, Math.min(1, Number(scalar) || 0));
+  await runAudioPs(`[AudioCtl]::SetVol([float]${v})`);
+}
+
+// 반환: 0.0 ~ 1.0 (실패 시 null)
+async function getMasterVolume() {
+  const out = await runAudioPs('[AudioCtl]::GetVol()');
+  const n = parseFloat(String(out).trim());
+  return Number.isFinite(n) ? n : null;
+}
 
 async function getSettings() {
   try {
@@ -166,7 +223,18 @@ async function applySoundBoost(settings) {
     } catch {
       await fs.mkdir(settingsDir, { recursive: true });
     }
-    
+
+    // [실제 구현] disable 시 원복하기 위해, 이전 저장 설정에서 previousMasterVolume을 이어받고
+    // enable 시 아직 캡처된 값이 없으면 지금의 마스터 볼륨을 캡처한다.
+    let savedSettings = {};
+    try { savedSettings = JSON.parse(await fs.readFile(settingsPath, 'utf8')) || {}; } catch { savedSettings = {}; }
+    if (savedSettings.previousMasterVolume !== undefined && savedSettings.previousMasterVolume !== null) {
+      settings.previousMasterVolume = savedSettings.previousMasterVolume;
+    } else if (settings.enabled) {
+      const prevVol = await getMasterVolume().catch(() => null);
+      if (prevVol !== null) settings.previousMasterVolume = prevVol;
+    }
+
     await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf8');
     results.operations.push('설정 저장 완료');
 
@@ -222,204 +290,33 @@ async function applySoundBoost(settings) {
     }
 
     if (settings.enabled) {
+      // [실제 구현] 마스터 볼륨을 Windows Core Audio COM으로 실제 반영한다.
       try {
-        const volumePercent = Math.max(0, Math.min(100, settings.masterVolume || 100));
-        const volumeScalar = (volumePercent / 100.0).toFixed(2);
-        
-        const volumeScript = `
-          $code = @'
-          using System;
-          using System.Runtime.InteropServices;
-          
-          [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-          class MMDeviceEnumerator { }
-          
-          [Guid("A95664D2-9614-4F35-A746-DE8DB63617E6")]
-          [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-          interface IMMDevice {
-            int Activate([MarshalAs(UnmanagedType.LPStruct)] Guid iid, int dwClsCtx, IntPtr pActivationParams, [MarshalAs(UnmanagedType.IUnknown)] out object ppInterface);
-          }
-          
-          [Guid("D666063F-1587-4E43-81F1-B948E807363F")]
-          [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-          interface IMMDeviceEnumerator {
-            int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice ppEndpoint);
-          }
-          
-          [Guid("5CDF2C82-841E-4546-9722-0CF74078229A")]
-          [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-          interface IAudioEndpointVolume {
-            int SetMasterVolumeLevelScalar(float fLevel, [MarshalAs(UnmanagedType.LPStruct)] Guid pguidEventContext);
-          }
-          
-          public class AudioHelper {
-            public static void SetVolume(float level) {
-              IMMDeviceEnumerator enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-              IMMDevice device;
-              enumerator.GetDefaultAudioEndpoint(0, 1, out device);
-              Guid guid = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
-              object volumeObj;
-              device.Activate(ref guid, 1, IntPtr.Zero, out volumeObj);
-              IAudioEndpointVolume volume = (IAudioEndpointVolume)volumeObj;
-              volume.SetMasterVolumeLevelScalar(level, Guid.Empty);
-            }
-          }
-'@
-          Add-Type -TypeDefinition $code -Language CSharp
-          [AudioHelper]::SetVolume(${volumeScalar})
-        `;
-        
-        await execAsync(
-          `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${volumeScript}"`,
-          { encoding: 'utf8', timeout: 10000, maxBuffer: 1024 * 1024 }
-        );
-        results.operations.push(`마스터 볼륨 ${volumePercent}% 설정 완료`);
+        const targetPercent = Math.max(0, Math.min(100, settings.masterVolume ?? 100));
+        // 게임/베이스 증폭 토글이 켜져 있으면 엔드포인트 볼륨 상한(100%)까지 올린다.
+        const boosted = settings.gameSoundBoost?.enabled || settings.baseSoundBoost?.enabled;
+        const applyPercent = boosted ? 100 : targetPercent;
+        await setMasterVolume(applyPercent / 100);
+        results.operations.push(`마스터 볼륨 ${applyPercent}% 적용 (실제 반영)`);
       } catch (error) {
-        try {
-          const volumePercent = Math.max(0, Math.min(100, settings.masterVolume || 100));
-          const sendKeysScript = `
-            $wshShell = New-Object -ComObject WScript.Shell
-            $targetVolume = ${volumePercent}
-            $steps = [math]::Round($targetVolume / 2)
-            for ($i = 0; $i -lt $steps; $i++) {
-              $wshShell.SendKeys([char]175)
-              Start-Sleep -Milliseconds 20
-            }
-          `;
-          
-          await execAsync(
-            `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${sendKeysScript}"`,
-            { encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 }
-          );
-          results.operations.push(`마스터 볼륨 ${volumePercent}% 설정 완료 (SendKeys 방법)`);
-        } catch (fallbackError) {
-          results.errors.push({ action: 'masterVolume', error: (error.message || fallbackError.message).substring(0, 100) });
-        }
+        results.errors.push({ action: 'masterVolume', error: (error.message || '').substring(0, 120) });
       }
-
-      if (settings.gameSoundBoost?.enabled) {
-        try {
-          const boostLevel = settings.gameSoundBoost.level || 50;
-          const gameAudioKey = new Registry({
-            hive: Registry.HKCU,
-            key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-          });
-
-          await new Promise((resolve, reject) => {
-            gameAudioKey.set('GameSoundBoost', Registry.REG_DWORD, Math.floor(boostLevel / 2).toString(), (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-          results.operations.push(`게임 사운드 증폭 ${boostLevel}% 설정 완료`);
-        } catch (error) {
-          results.errors.push({ action: 'gameSoundBoost', error: error.message });
-        }
-      }
-
-      if (settings.baseSoundBoost?.enabled) {
-        try {
-          const boostLevel = settings.baseSoundBoost.level || 50;
-          const audioKey = new Registry({
-            hive: Registry.HKCU,
-            key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-          });
-
-          await new Promise((resolve, reject) => {
-            audioKey.set('BassBoost', Registry.REG_DWORD, Math.floor(boostLevel / 2).toString(), (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-          results.operations.push(`베이스 사운드 증폭 ${boostLevel}% 설정 완료`);
-        } catch (error) {
-          results.errors.push({ action: 'baseSoundBoost', error: error.message });
-        }
-      }
-
-      try {
-        const eqKey = new Registry({
-          hive: Registry.HKCU,
-          key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-        });
-
-        const eqPresets = {
-          normal: '0',
-          game: '1',
-          music: '2',
-          movie: '3',
-          voice: '4',
-          bass: '5',
-        };
-
-        const presetValue = eqPresets[settings.eqPreset] || '0';
-        await new Promise((resolve, reject) => {
-          eqKey.set('EQPreset', Registry.REG_DWORD, presetValue, (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        results.operations.push(`EQ 프리셋 "${settings.eqPreset}" 설정 완료`);
-      } catch (error) {
-        results.errors.push({ action: 'eqPreset', error: error.message });
-      }
-
-      try {
-        const audioKey = new Registry({
-          hive: Registry.HKCU,
-          key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-        });
-
-        await new Promise((resolve, reject) => {
-          audioKey.set('BassLevel', Registry.REG_DWORD, Math.floor((settings.bassLevel || 50) / 2).toString(), (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-
-        await new Promise((resolve, reject) => {
-          audioKey.set('TrebleLevel', Registry.REG_DWORD, Math.floor((settings.trebleLevel || 50) / 2).toString(), (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        results.operations.push(`베이스 ${settings.bassLevel}%, 트레블 ${settings.trebleLevel}% 설정 완료`);
-      } catch (error) {
-        results.errors.push({ action: 'bassTreble', error: error.message });
-      }
-
-      try {
-        const enhancementKey = new Registry({
-          hive: Registry.HKCU,
-          key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-        });
-
-        await new Promise((resolve, reject) => {
-          enhancementKey.set('EnableAudioEnhancement', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        results.operations.push('오디오 향상 기능 활성화 완료');
-      } catch (error) {
-        results.errors.push({ action: 'audioEnhancement', error: error.message });
-      }
+      // 참고: 커스텀 EQ/베이스/트레블 실시간 처리는 시스템 오디오 스트림에 대한 DSP(드라이버 APO
+      // 또는 네이티브 오디오 모듈)가 필요하다. 설정 값은 파일에 저장되어 앱이 기억하지만, 하드웨어에
+      // 실제 반영되는 것은 마스터 볼륨이다. (과거엔 Windows가 읽지 않는 가짜 HKCU 레지스트리에 쓰고
+      // "적용 완료"로 오보고했음 → 제거함.)
     } else {
+      // [실제 구현] 비활성화: enable 시 캡처해 둔 이전 볼륨으로 실제 원복
       try {
-        const enhancementKey = new Registry({
-          hive: Registry.HKCU,
-          key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
-        });
-
-        await new Promise((resolve, reject) => {
-          enhancementKey.set('EnableAudioEnhancement', Registry.REG_DWORD, '0', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        results.operations.push('Sound Boost 비활성화 완료');
+        const prev = settings.previousMasterVolume;
+        if (typeof prev === 'number' && Number.isFinite(prev)) {
+          await setMasterVolume(prev);
+          results.operations.push(`Sound Boost 비활성화 (볼륨 ${Math.round(prev * 100)}%로 원복)`);
+        } else {
+          results.operations.push('Sound Boost 비활성화');
+        }
       } catch (error) {
-        results.errors.push({ action: 'disableAudioEnhancement', error: error.message });
+        results.errors.push({ action: 'disableSoundBoost', error: error.message });
       }
     }
 
