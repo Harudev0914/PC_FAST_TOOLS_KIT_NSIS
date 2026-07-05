@@ -17,6 +17,8 @@ function SoundBoost() {
   const [availableModels, setAvailableModels] = useState([]);
   const [detectingModels, setDetectingModels] = useState(false);
   const [apoInstalled, setApoInstalled] = useState(null); // Equalizer APO 설치 여부(실제 EQ 적용 가능 여부)
+  const [installingApo, setInstallingApo] = useState(false);
+  const [apoMsg, setApoMsg] = useState('');
 
   const [modelSettings, setModelSettings] = useState({
     superpowered: {
@@ -67,6 +69,27 @@ function SoundBoost() {
       setApoInstalled(!!(r && r.installed));
     } catch {
       setApoInstalled(false);
+    }
+  };
+
+  // [실제 동작] 공식 Equalizer APO 설치 프로그램을 앱이 직접 받아 실행 (사용자는 설치 UI + 재부팅만)
+  const handleInstallApo = async () => {
+    if (!window.electronAPI?.audio?.installEqualizerApo) return;
+    setInstallingApo(true);
+    setApoMsg('설치 프로그램을 다운로드하는 중... (수십 MB, 잠시 걸릴 수 있습니다)');
+    try {
+      const r = await window.electronAPI.audio.installEqualizerApo();
+      if (r && r.launched) {
+        setApoMsg('설치 프로그램이 실행되었습니다. 설치 → 출력 장치 선택 → 재부팅하면 EQ·베이스가 실제로 적용됩니다.');
+      } else if (r && r.openedPage) {
+        setApoMsg('자동 다운로드에 실패해 다운로드 페이지를 열었습니다. 수동으로 설치해 주세요.');
+      } else {
+        setApoMsg('설치를 시작하지 못했습니다: ' + ((r && r.error) || '알 수 없는 오류'));
+      }
+    } catch (e) {
+      setApoMsg('오류: ' + (e.message || ''));
+    } finally {
+      setInstallingApo(false);
     }
   };
 
@@ -251,11 +274,15 @@ function SoundBoost() {
             <button
               className="action-button apply-button"
               style={{ whiteSpace: 'nowrap' }}
-              onClick={() => window.electronAPI?.audio?.openEqualizerApoDownload?.()}
+              onClick={handleInstallApo}
+              disabled={installingApo}
             >
-              Equalizer APO 다운로드
+              {installingApo ? '설치 준비 중...' : 'Equalizer APO 설치'}
             </button>
           </div>
+          {apoMsg && (
+            <p className="page-description" style={{ marginTop: '12px', marginBottom: 0 }}>{apoMsg}</p>
+          )}
         </div>
       )}
       {apoInstalled === true && (

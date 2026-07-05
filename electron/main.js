@@ -1,5 +1,29 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+const https = require('https');
+
+// [실제 구현] 리다이렉트를 따라가며 파일 다운로드 (Equalizer APO 설치 프로그램 등)
+function downloadTo(url, dest, redirectsLeft = 6) {
+  return new Promise((resolve, reject) => {
+    if (redirectsLeft < 0) return reject(new Error('Too many redirects'));
+    const mod = url.startsWith('http:') ? require('http') : https;
+    const req = mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': '*/*' } }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        try { return resolve(downloadTo(new URL(res.headers.location, url).toString(), dest, redirectsLeft - 1)); }
+        catch (e) { return reject(e); }
+      }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('HTTP ' + res.statusCode)); }
+      const fsm = require('fs');
+      const out = fsm.createWriteStream(dest);
+      res.pipe(out);
+      out.on('finish', () => out.close(() => resolve(dest)));
+      out.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(60000, () => req.destroy(new Error('Download timeout')));
+  });
+}
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
@@ -423,6 +447,42 @@ ipcMain.handle('audio:openEqualizerApoDownload', async () => {
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+});
+
+// [실제 동작] 공식 Equalizer APO 설치 프로그램을 직접 다운로드해 실행한다. 사용자는 표준 설치
+// UI(장치 선택)와 재부팅만 진행하면 이후 EQ/베이스가 시스템 전역에 실제 적용된다. URL은 고정.
+ipcMain.handle('audio:installEqualizerApo', async () => {
+  const os = require('os');
+  const fsm = require('fs');
+  const dest = path.join(os.tmpdir(), 'EqualizerAPO-setup.exe');
+  const readSig = () => {
+    const fd = fsm.openSync(dest, 'r');
+    const s = Buffer.alloc(2);
+    fsm.readSync(fd, s, 0, 2, 0);
+    fsm.closeSync(fd);
+    return s.toString('latin1');
+  };
+  try {
+    // 1) SourceForge 최신 다운로드 (실행파일 또는 인터스티셜 HTML)
+    await downloadTo('https://sourceforge.net/projects/equalizerapo/files/latest/download', dest);
+    // 2) HTML 인터스티셜이면 meta-refresh의 실제 미러 URL(시간제한 토큰 포함)을 파싱해 재다운로드
+    if (readSig() !== 'MZ') {
+      const html = fsm.readFileSync(dest, 'utf8');
+      const m = html.match(/content="[0-9]+;\s*url=(https?:\/\/[^"]+\.exe[^"]*)"/i);
+      if (m) {
+        const mirror = m[1].replace(/&amp;/g, '&');
+        await downloadTo(mirror, dest);
+      }
+    }
+    if (readSig() !== 'MZ') throw new Error('설치 파일 다운로드 실패(형식 불일치)');
+    const err = await shell.openPath(dest); // 설치 프로그램 실행(UAC) — 사용자가 진행
+    if (err) throw new Error(err);
+    return { success: true, launched: true };
+  } catch (error) {
+    // 실패 시 공식 페이지를 열어 수동 다운로드 유도
+    try { await shell.openExternal('https://sourceforge.net/projects/equalizerapo/'); } catch (e) {}
+    return { success: false, error: error.message, openedPage: true };
   }
 });
 

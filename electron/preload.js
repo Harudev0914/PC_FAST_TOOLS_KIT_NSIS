@@ -53,6 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectModels: () => ipcRenderer.invoke('audio:detectModels'),
     isEqualizerApoInstalled: () => ipcRenderer.invoke('audio:isEqualizerApoInstalled'),
     openEqualizerApoDownload: () => ipcRenderer.invoke('audio:openEqualizerApoDownload'),
+    installEqualizerApo: () => ipcRenderer.invoke('audio:installEqualizerApo'),
   },
 
   // Gaming
