@@ -206,7 +206,9 @@ foreach ($proc in $processes) {
             
             await Promise.all([
               new Promise((resolve, reject) => {
-                pageFileKey.set('PagingFiles', Registry.REG_MULTI_SZ, '', (err) => {
+                // [고도화] 빈 값('')은 페이지파일을 "비활성화"한다(위험). '?:\pagefile.sys'는
+                // 모든 드라이브에 대해 시스템 관리(auto) 페이지파일을 의미한다.
+                pageFileKey.set('PagingFiles', Registry.REG_MULTI_SZ, '?:\\pagefile.sys', (err) => {
                   if (err) reject(err);
                   else resolve();
                 });
@@ -218,9 +220,9 @@ foreach ($proc in $processes) {
                 });
               }),
             ]);
-            
+
             results.pageFileOptimized = true;
-            results.operations.push('Page file optimized');
+            results.operations.push('페이지파일 시스템 관리(auto)로 설정');
           } catch (error) {
           }
         })()

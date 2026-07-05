@@ -175,24 +175,27 @@ async function getDetailedGPUInfo() {
           if (isNvidia && nvidiaLines && nvidiaLines[nvidiaCursor]) {
             const parts = nvidiaLines[nvidiaCursor].split(',').map(p => p.trim());
             nvidiaCursor++;
+            // [고도화] nvidia-smi가 '[N/A]'를 반환하면 parseInt/parseFloat가 NaN이 되어 차트가
+            // 깨진다. 유한수만 통과시키고 아니면 0으로 대체하는 안전 파서 사용.
+            const num = (v, d = 0) => { const n = parseFloat(v); return Number.isFinite(n) ? n : d; };
             if (parts.length >= 9) {
-              gpu.usage = parseInt(parts[0] || 0);
-              gpu.memoryUtilization = parseInt(parts[1] || 0);
-              const memUsed = parseFloat(parts[2] || 0);
-              const memTotal = parseFloat(parts[3] || 0);
+              gpu.usage = num(parts[0]);
+              gpu.memoryUtilization = num(parts[1]);
+              const memUsed = num(parts[2]);
+              const memTotal = num(parts[3]);
               gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
               gpu.driverVersion = parts[4] || 'Unknown';
-              gpu.temperature = parseFloat(parts[5] || 0);
-              gpu.powerDraw = parseFloat(parts[6] || 0);
-              gpu.graphicsClock = parseInt(parts[7] || 0);
-              gpu.memoryClock = parseInt(parts[8] || 0);
+              gpu.temperature = num(parts[5]);
+              gpu.powerDraw = num(parts[6]);
+              gpu.graphicsClock = num(parts[7]);
+              gpu.memoryClock = num(parts[8]);
               gpu.vramUsed = memUsed;
               gpu.vramUsedPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
               matched = true;
             } else if (parts.length >= 4) {
-              gpu.usage = parseInt(parts[0] || 0);
-              const memUsed = parseFloat(parts[1] || 0);
-              const memTotal = parseFloat(parts[2] || 0);
+              gpu.usage = num(parts[0]);
+              const memUsed = num(parts[1]);
+              const memTotal = num(parts[2]);
               gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
               gpu.driverVersion = parts[3] || 'Unknown';
               gpu.vramUsed = memUsed;

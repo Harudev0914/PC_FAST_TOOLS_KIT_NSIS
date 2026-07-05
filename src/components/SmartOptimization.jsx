@@ -1165,10 +1165,10 @@ function SmartOptimization() {
         progressInterval = null;
       }
       
-      // 현재 탭에서만 상세 결과 표시
-      if (optimizingComponent === selectedComponent) {
-        setOptimizeResult(result);
-      }
+      // [고도화] 완료 결과를 항상 반영한다(탭 전환 시 line-121 효과가 자동 초기화).
+      // 기존엔 stale closure의 optimizingComponent(호출 시점 null)와 비교해 결과/에러가
+      // 절대 표시되지 않았다(성공 시 배지만, 실패 시 오류 목록조차 안 보임).
+      setOptimizeResult(result);
       
       // 완료 여부만 저장
       if (result?.success) {
@@ -1197,10 +1197,8 @@ function SmartOptimization() {
         errors: [{ action: 'optimize', error: error.message || '알 수 없는 오류가 발생했습니다.' }] 
       };
       
-      // 현재 탭에서만 에러 결과 표시
-      if (optimizingComponent === selectedComponent) {
-        setOptimizeResult(errorResult);
-      }
+      // [고도화] 오류 결과도 항상 반영 (위와 동일한 stale-closure 버그 수정)
+      setOptimizeResult(errorResult);
       
       setOptimizeProgress({ percent: 0, currentTask: '오류 발생' });
       
@@ -1396,7 +1394,7 @@ function SmartOptimization() {
                 </div>
               </div>
             )}
-            {selectedComponent === 'cpu' && optimizeResult && optimizingComponent === selectedComponent && (
+            {selectedComponent === 'cpu' && optimizeResult && (
               <div className="optimize-results">
                 {optimizeResult.operations && optimizeResult.operations.length > 0 && (
                   <>
@@ -1446,7 +1444,7 @@ function SmartOptimization() {
                 )}
               </div>
             )}
-            {selectedComponent === 'memory' && optimizeResult && optimizingComponent === selectedComponent && (
+            {selectedComponent === 'memory' && optimizeResult && (
               <div className="optimize-results">
                 {optimizeResult.operations && optimizeResult.operations.length > 0 && (
                   <>
@@ -1526,7 +1524,7 @@ function SmartOptimization() {
                 )}
               </div>
             )}
-            {selectedComponent.startsWith('disk-') && optimizeResult && optimizingComponent === selectedComponent && (
+            {selectedComponent.startsWith('disk-') && optimizeResult && (
               <div className="optimize-results">
                 {optimizeResult.operations && optimizeResult.operations.length > 0 && (
                   <>

@@ -149,32 +149,22 @@ async function optimize(options = {}) {
   //   - powercfg /setactive: 전원 계획 활성화
 
   try {
-    const { stdout } = await execAsync('powercfg /list');
-    const lines = stdout.split('\n');
-    let highPerfGuid = null;
-    
-    for (const line of lines) {
-      if (line.includes('고성능') || line.includes('High performance') || line.includes('8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c')) {
-        const match = line.match(/\(([a-f0-9-]+)\)/);
-        if (match) {
-          highPerfGuid = match[1];
-          break;
-        }
-      }
-    }
-    
-    if (!highPerfGuid) {
-      await execAsync('powercfg /duplicatescheme 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c');
-      const { stdout: newStdout } = await execAsync('powercfg /list');
-      const newMatch = newStdout.match(/\(([a-f0-9-]+)\)/);
-      if (newMatch) {
-        highPerfGuid = newMatch[1];
-      }
-    }
-    
-    if (highPerfGuid) {
-      await execAsync(`powercfg /setactive ${highPerfGuid}`);
+    // [고도화] 고성능 전원 계획을 상수 GUID로 직접 활성화한다.
+    // (기존 정규식 /\(([a-f0-9-]+)\)/는 powercfg /list에서 괄호 안 "지역화된 이름"만 잡아
+    //  항상 null → setactive 미실행(무효) + 매 호출마다 중복 스킴을 새로 생성하는 버그였다.)
+    const HIGH_PERF = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c';
+    try {
+      await execAsync(`powercfg /setactive ${HIGH_PERF}`);
       results.powerPlan = true;
+    } catch (e) {
+      // 고성능 계획이 없는 경우에만 복제 후, 복제 명령의 stdout('Power Scheme GUID: <guid>')에서
+      // 올바른 GUID 정규식으로 새 GUID를 파싱해 활성화한다.
+      const { stdout: dup } = await execAsync(`powercfg /duplicatescheme ${HIGH_PERF}`);
+      const m = dup.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      if (m) {
+        await execAsync(`powercfg /setactive ${m[1]}`);
+        results.powerPlan = true;
+      }
     }
   } catch (error) {
     results.errors.push({ action: 'powerPlan', error: error.message });
@@ -241,10 +231,15 @@ async function optimize(options = {}) {
               );
               if (shouldDisable) {
                 try {
-                  await execAsync(
-                    `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run" /v "${itemName}" /t REG_BINARY /d 030000000000000000000000 /f`,
-                    { timeout: 5000 }
-                  ).catch(() => {});
+                  // [보안] itemName은 레지스트리에서 열거한 값이라 신뢰 불가 → shell(reg add) 대신
+                  // winreg API로 직접 기록해 명령 주입을 원천 차단한다(winreg는 셸을 거치지 않음).
+                  const approvedKey = new Registry({
+                    hive: Registry.HKCU,
+                    key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run',
+                  });
+                  await new Promise((res) => {
+                    approvedKey.set(itemName, Registry.REG_BINARY, '030000000000000000000000', () => res());
+                  });
                   disabledCount++;
                 } catch (e) {}
               }

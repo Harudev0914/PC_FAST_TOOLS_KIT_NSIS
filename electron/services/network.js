@@ -8,13 +8,15 @@
 // - winreg (Registry): Windows 레지스트리 접근. 네트워크 어댑터 설정, TCP/IP 파라미터 변경에 사용
 //   사용 예: new Registry({ hive: Registry.HKLM, key }) - 레지스트리 키 생성, .set() - 값 설정
 
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');
 // [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
 // 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
 const _execRaw = promisify(exec);
 const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+// [보안] 사용자 입력(host 등)을 셸 없이 실행하기 위한 execFile 래퍼
+const execFileAsync = promisify(execFile);
 
 // @network.js (12-39)
 // getStats 함수: 네트워크 통계 정보 조회
@@ -36,7 +38,8 @@ async function getStats() {
     let bytesSent = 0;
     
     for (const line of lines) {
-      if (line.includes('Bytes')) {
+      // [고도화] 한국어 Windows는 netstat -e가 'Bytes'가 아닌 '바이트'로 표기 → 항상 0이던 문제 수정
+      if (line.includes('Bytes') || line.includes('바이트')) {
         const parts = line.trim().split(/\s+/);
         if (parts.length >= 3) {
           bytesReceived = parseInt(parts[1]) || 0;
@@ -71,7 +74,8 @@ async function getStats() {
 
 async function pingTest(host = '8.8.8.8') {
   try {
-    const { stdout } = await execAsync(`ping -n 4 ${host}`);
+    // [보안] host를 셸에 문자열 보간하지 않고 execFile 인자로 전달해 명령 주입 차단
+    const { stdout } = await execFileAsync('ping', ['-n', '4', String(host)], { timeout: 120000, maxBuffer: 1024 * 1024 * 20 });
     const lines = stdout.split('\n');
     
     const times = [];
@@ -91,7 +95,8 @@ async function pingTest(host = '8.8.8.8') {
           avgTime = parseInt(match[1]);
         }
       }
-      if (line.includes('Lost')) {
+      // [고도화] 한국어 ping은 '손실'로 표기 → packetLoss가 항상 0이던 문제 수정
+      if (line.includes('Lost') || line.includes('손실')) {
         const match = line.match(/(\d+)%/);
         if (match) {
           packetLoss = parseInt(match[1]);
