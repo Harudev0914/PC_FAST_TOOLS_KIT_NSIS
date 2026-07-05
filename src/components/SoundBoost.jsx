@@ -1,91 +1,256 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import '../styles/SoundBoost.css';
+
+const EQ_FREQS = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'];
+const PRESETS = {
+  normal: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  game: [4, 3, 1, 0, -1, 0, 2, 4, 4, 3],
+  music: [3, 2, 0, 0, -1, -1, 0, 1, 2, 3],
+  movie: [4, 3, 2, 0, 0, 1, 2, 2, 3, 4],
+  voice: [-2, -1, 0, 2, 4, 4, 3, 1, 0, -1],
+  bass: [7, 6, 5, 3, 1, 0, 0, 0, 0, 0],
+};
+const PRESET_LABELS = { normal: '일반', game: '게임', music: '음악', movie: '영화', voice: '음성', bass: '베이스' };
+
+// 오디오 인터페이스 스타일 로터리 노브 (LED 링 + 드래그로 회전)
+function Knob({ label, value, min, max, unit, onChange, size = 92, accent = '#35e0d0' }) {
+  const dragRef = useRef(null);
+  const pct = (value - min) / (max - min);
+  const START = 135, SWEEP = 270;
+  const angle = START + pct * SWEEP;
+  const cx = size / 2, cy = size / 2;
+  const R = size / 2 - 9;
+  const polar = (deg) => {
+    const r = ((deg - 90) * Math.PI) / 180;
+    return [cx + R * Math.cos(r), cy + R * Math.sin(r)];
+  };
+  const arcPath = (a0, a1) => {
+    const [x0, y0] = polar(a0);
+    const [x1, y1] = polar(a1);
+    const large = a1 - a0 > 180 ? 1 : 0;
+    return `M ${x0.toFixed(2)} ${y0.toFixed(2)} A ${R} ${R} 0 ${large} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+  };
+  const onDown = (e) => {
+    e.preventDefault();
+    dragRef.current = { y: e.clientY, v: value };
+    const move = (ev) => {
+      const dy = dragRef.current.y - ev.clientY;
+      let nv = dragRef.current.v + Math.round(dy / 2);
+      nv = Math.max(min, Math.min(max, nv));
+      onChange(nv);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  const [px, py] = polar(angle);
+  const [dx, dy] = polar(angle); // pointer dot near edge
+  return (
+    <div className="ai-knob">
+      <svg width={size} height={size} className="ai-knob-svg" onMouseDown={onDown} onDoubleClick={() => onChange(Math.round((min + max) / 2))}>
+        <path d={arcPath(START, START + SWEEP)} className="ai-knob-track" />
+        <path d={arcPath(START, Math.max(START + 0.1, angle))} className="ai-knob-fill" style={{ stroke: accent }} />
+        <circle cx={cx} cy={cy} r={R - 9} className="ai-knob-body" />
+        <circle cx={cx} cy={cy} r={R - 9} className="ai-knob-bevel" />
+        <line x1={cx} y1={cy} x2={cx + (R - 12) * Math.cos(((angle - 90) * Math.PI) / 180)} y2={cy + (R - 12) * Math.sin(((angle - 90) * Math.PI) / 180)} className="ai-knob-pointer" style={{ stroke: accent }} />
+        <circle cx={dx} cy={dy} r="2.6" className="ai-knob-dot" style={{ fill: accent }} />
+      </svg>
+      <div className="ai-knob-val">{value > 0 && unit === 'dB' ? '+' : ''}{value}{unit}</div>
+      <div className="ai-knob-label">{label}</div>
+    </div>
+  );
+}
+
+// 세그먼트 LED 미터 (출력 레벨)
+function LedMeter({ level }) {
+  const segs = 14;
+  const lit = Math.round((level / 100) * segs);
+  return (
+    <div className="ai-meter">
+      {Array.from({ length: segs }).map((_, i) => {
+        const idx = segs - 1 - i; // 위에서 아래로
+        const on = idx < lit;
+        const tone = idx >= segs - 2 ? 'red' : idx >= segs - 5 ? 'amber' : 'green';
+        return <span key={i} className={`ai-meter-seg ${tone} ${on ? 'on' : ''}`} />;
+      })}
+    </div>
+  );
+}
 
 function SoundBoost() {
   const [enabled, setEnabled] = useState(false);
-  const [gameSoundBoost, setGameSoundBoost] = useState({ enabled: false, level: 50 });
-  const [baseSoundBoost, setBaseSoundBoost] = useState({ enabled: false, level: 50 });
-  const [masterVolume, setMasterVolume] = useState(100);
+  const [masterVolume, setMasterVolume] = useState(80);
   const [bassLevel, setBassLevel] = useState(50);
   const [trebleLevel, setTrebleLevel] = useState(50);
+  const [eqBands, setEqBands] = useState([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const [eqPreset, setEqPreset] = useState('normal');
-  const [applying, setApplying] = useState(false);
-  const [applyResult, setApplyResult] = useState(null);
+  const [gameBoost, setGameBoost] = useState({ enabled: false, level: 50 });
+  const [bassBoost, setBassBoost] = useState({ enabled: false, level: 50 });
   const [devices, setDevices] = useState([]);
-  const [eqPresets, setEqPresets] = useState([]);
-  const [selectedModel, setSelectedModel] = useState(null);
-  const [availableModels, setAvailableModels] = useState([]);
-  const [detectingModels, setDetectingModels] = useState(false);
-  const [apoInstalled, setApoInstalled] = useState(null); // Equalizer APO 설치 여부(실제 EQ 적용 가능 여부)
+  const [apoInstalled, setApoInstalled] = useState(null);
   const [installingApo, setInstallingApo] = useState(false);
   const [apoMsg, setApoMsg] = useState('');
+  const [applying, setApplying] = useState(false);
 
-  const [modelSettings, setModelSettings] = useState({
-    superpowered: {
-      eqEnabled: false,
-      compressionEnabled: false,
-      filterEnabled: false,
-      mixingEnabled: false,
-      effectsEnabled: false,
-      eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 10-band EQ
-      compressionRatio: 2.0,
-      filterCutoff: 1000,
-    },
-    miniaudio: {
-      filterEnabled: false,
-      processingEnabled: false,
-      mixingEnabled: false,
-      filterType: 'lowpass',
-      filterCutoff: 1000,
-      processingLatency: 10,
-    },
-    portaudio: {
-      ioEnabled: false,
-      dspEnabled: false,
-      latency: 50,
-      sampleRate: 44100,
-    },
-    freedsp: {
-      eqEnabled: false,
-      bassBoostEnabled: false,
-      eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-      bassBoostLevel: 0,
-    },
-  });
+  const curveRef = useRef(null);
+  const timerRef = useRef(null);
+  const stateRef = useRef({});
+  stateRef.current = { enabled, masterVolume, bassLevel, trebleLevel, eqPreset, gameBoost, bassBoost, eqBands };
 
   useEffect(() => {
-    loadSettings();
-    loadDevices();
-    loadEQPresets();
-    loadModels();
-    checkApoStatus();
+    (async () => {
+      const s = window.__preloadedAudioSettings ||
+        (window.electronAPI?.audio?.getSettings ? await window.electronAPI.audio.getSettings().catch(() => null) : null);
+      if (s) {
+        setEnabled(!!s.enabled);
+        setMasterVolume(s.masterVolume ?? 80);
+        setBassLevel(s.bassLevel ?? 50);
+        setTrebleLevel(s.trebleLevel ?? 50);
+        setEqPreset(s.eqPreset || 'normal');
+        if (Array.isArray(s.modelSettings?.eqBands) && s.modelSettings.eqBands.length === 10) setEqBands(s.modelSettings.eqBands);
+        if (s.gameSoundBoost) setGameBoost(s.gameSoundBoost);
+        if (s.baseSoundBoost) setBassBoost(s.baseSoundBoost);
+      }
+      const d = window.__preloadedAudioDevices ||
+        (window.electronAPI?.audio?.getDevices ? await window.electronAPI.audio.getDevices().catch(() => []) : []);
+      setDevices(Array.isArray(d) ? d : []);
+      if (window.electronAPI?.audio?.isEqualizerApoInstalled) {
+        const r = await window.electronAPI.audio.isEqualizerApoInstalled().catch(() => null);
+        setApoInstalled(!!(r && r.installed));
+      }
+    })();
+    return () => timerRef.current && clearTimeout(timerRef.current);
   }, []);
 
-  // [실제 구현] Equalizer APO(시스템 전역 EQ) 설치 여부 확인 → EQ/베이스/트레블 실제 적용 가능 여부
-  const checkApoStatus = async () => {
-    if (!window.electronAPI?.audio?.isEqualizerApoInstalled) return;
+  const doApply = useCallback(async (over = {}) => {
+    if (!window.electronAPI?.audio?.applySoundBoost) return;
+    const s = { ...stateRef.current, ...over };
+    setApplying(true);
     try {
-      const r = await window.electronAPI.audio.isEqualizerApoInstalled();
-      setApoInstalled(!!(r && r.installed));
-    } catch {
-      setApoInstalled(false);
-    }
+      await window.electronAPI.audio.applySoundBoost({
+        enabled: s.enabled,
+        masterVolume: s.masterVolume,
+        bassLevel: s.bassLevel,
+        trebleLevel: s.trebleLevel,
+        eqPreset: s.eqPreset,
+        gameSoundBoost: s.gameBoost,
+        baseSoundBoost: s.bassBoost,
+        modelSettings: { eqBands: s.eqBands },
+      });
+    } catch (e) { /* ignore */ } finally { setApplying(false); }
+  }, []);
+
+  const scheduleApply = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => { if (stateRef.current.enabled) doApply(); }, 280);
+  }, [doApply]);
+
+  const togglePower = () => {
+    const next = !enabled;
+    setEnabled(next);
+    doApply({ enabled: next });
   };
 
-  // [실제 동작] 공식 Equalizer APO 설치 프로그램을 앱이 직접 받아 실행 (사용자는 설치 UI + 재부팅만)
+  const changeBand = (i, v) => {
+    const n = [...eqBands]; n[i] = v;
+    setEqBands(n); setEqPreset('custom');
+    if (enabled) scheduleApply();
+  };
+  const applyPreset = (key) => {
+    setEqPreset(key); setEqBands(PRESETS[key] || PRESETS.normal);
+    if (enabled) scheduleApply();
+  };
+  const changeVal = (setter) => (v) => { setter(v); if (enabled) scheduleApply(); };
+  const toggleEnhancer = (which) => {
+    if (which === 'game') setGameBoost((p) => ({ ...p, enabled: !p.enabled }));
+    else setBassBoost((p) => ({ ...p, enabled: !p.enabled }));
+    if (enabled) scheduleApply();
+  };
+  const changeEnhancerLevel = (which, level) => {
+    if (which === 'game') setGameBoost((p) => ({ ...p, level }));
+    else setBassBoost((p) => ({ ...p, level }));
+    if (enabled) scheduleApply();
+  };
+
+  // EQ 커브 그리기
+  useEffect(() => {
+    const c = curveRef.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    const w = c.width, h = c.height;
+    ctx.clearRect(0, 0, w, h);
+    const accent = enabled ? '#35e0d0' : '#4a5560';
+    // grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 4; i++) {
+      const y = (h / 4) * i;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+    }
+    const n = eqBands.length;
+    for (let i = 0; i < n; i++) {
+      const x = (w / (n - 1)) * i;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    }
+    // 0 dB reference
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    // curve points
+    const pts = eqBands.map((g, i) => ({
+      x: (w / (n - 1)) * i,
+      y: h / 2 - (Math.max(-12, Math.min(12, g)) / 12) * (h / 2 * 0.86),
+    }));
+    // smooth line
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const xc = (pts[i].x + pts[i + 1].x) / 2;
+      const yc = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    // fill under
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, enabled ? 'rgba(53,224,208,0.28)' : 'rgba(74,85,96,0.18)');
+    grad.addColorStop(1, 'rgba(53,224,208,0)');
+    ctx.save();
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.restore();
+    // stroke curve again on top
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const xc = (pts[i].x + pts[i + 1].x) / 2;
+      const yc = (pts[i].y + pts[i + 1].y) / 2;
+      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+    }
+    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 2.4;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = enabled ? 10 : 0;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // nodes
+    pts.forEach((p) => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = accent; ctx.fill();
+    });
+  }, [eqBands, enabled]);
+
   const handleInstallApo = async () => {
     if (!window.electronAPI?.audio?.installEqualizerApo) return;
     setInstallingApo(true);
-    setApoMsg('설치 프로그램을 다운로드하는 중... (수십 MB, 잠시 걸릴 수 있습니다)');
+    setApoMsg('설치 프로그램을 다운로드하는 중... (약 12MB)');
     try {
       const r = await window.electronAPI.audio.installEqualizerApo();
-      if (r && r.launched) {
-        setApoMsg('설치 프로그램이 실행되었습니다. 설치 → 출력 장치 선택 → 재부팅하면 EQ·베이스가 실제로 적용됩니다.');
-      } else if (r && r.openedPage) {
-        setApoMsg('자동 다운로드에 실패해 다운로드 페이지를 열었습니다. 수동으로 설치해 주세요.');
-      } else {
-        setApoMsg('설치를 시작하지 못했습니다: ' + ((r && r.error) || '알 수 없는 오류'));
-      }
+      if (r && r.launched) setApoMsg('설치 프로그램 실행됨 → 출력 장치 선택 후 재부팅하면 EQ가 실제 적용됩니다.');
+      else if (r && r.openedPage) setApoMsg('자동 다운로드 실패 → 다운로드 페이지를 열었습니다. 수동 설치해 주세요.');
+      else setApoMsg('설치 시작 실패: ' + ((r && r.error) || '알 수 없는 오류'));
     } catch (e) {
       setApoMsg('오류: ' + (e.message || ''));
     } finally {
@@ -93,857 +258,145 @@ function SoundBoost() {
     }
   };
 
-  // 사용 가능한 오디오 처리 모델 감지 (이전엔 호출되지 않아 모델 목록이 항상 비어 있었음)
-  const loadModels = async () => {
-    if (!window.electronAPI?.audio?.detectModels) return;
-    setDetectingModels(true);
-    try {
-      const models = await window.electronAPI.audio.detectModels();
-      const list = Array.isArray(models) ? models : [];
-      setAvailableModels(list);
-      // 선택된 모델이 없으면 사용 가능한 첫 모델을 기본 선택
-      setSelectedModel((prev) => prev || list.find((m) => m.available)?.id || null);
-    } catch (error) {
-      console.error('Error detecting audio models:', error);
-    } finally {
-      setDetectingModels(false);
-    }
-  };
-
-  const loadSettings = async () => {
-    try {
-      if (window.__preloadedAudioSettings) {
-        const settings = window.__preloadedAudioSettings;
-        setEnabled(settings.enabled || false);
-        setGameSoundBoost(settings.gameSoundBoost || { enabled: false, level: 50 });
-        setBaseSoundBoost(settings.baseSoundBoost || { enabled: false, level: 50 });
-        setMasterVolume(settings.masterVolume || 100);
-        setBassLevel(settings.bassLevel || 50);
-        setTrebleLevel(settings.trebleLevel || 50);
-        setEqPreset(settings.eqPreset || 'normal');
-        return;
-      }
-      
-      // 미리 로드된 데이터가 없으면 API 호출
-      if (window.electronAPI?.audio?.getSettings) {
-        const settings = await window.electronAPI.audio.getSettings();
-        if (settings) {
-          setEnabled(settings.enabled || false);
-          setGameSoundBoost(settings.gameSoundBoost || { enabled: false, level: 50 });
-          setBaseSoundBoost(settings.baseSoundBoost || { enabled: false, level: 50 });
-          setMasterVolume(settings.masterVolume || 100);
-          setBassLevel(settings.bassLevel || 50);
-          setTrebleLevel(settings.trebleLevel || 50);
-          setEqPreset(settings.eqPreset || 'normal');
-        }
-      }
-    } catch (error) {
-      console.error('Error loading settings:', error);
-    }
-  };
-
-  const loadDevices = async () => {
-    try {
-      if (window.__preloadedAudioDevices && window.__preloadedAudioDevices.length > 0) {
-        setDevices(window.__preloadedAudioDevices);
-        return;
-      }
-      
-      if (window.electronAPI?.audio?.getDevices) {
-        const deviceList = await window.electronAPI.audio.getDevices();
-        setDevices(deviceList || []);
-      }
-    } catch (error) {
-      console.error('Error loading devices:', error);
-    }
-  };
-
-  const loadEQPresets = async () => {
-    try {
-      // 먼저 미리 로드된 EQ 프리셋 확인
-      if (window.__preloadedEQPresets && window.__preloadedEQPresets.length > 0) {
-        setEqPresets(window.__preloadedEQPresets);
-        return;
-      }
-      
-      if (window.electronAPI?.audio?.getEQPresets) {
-        const presets = await window.electronAPI.audio.getEQPresets();
-        setEqPresets(presets || []);
-      } else {
-        setEqPresets([
-          { value: 'normal', label: '일반' },
-          { value: 'game', label: '게임' },
-          { value: 'music', label: '음악' },
-          { value: 'movie', label: '영화' },
-          { value: 'voice', label: '음성' },
-          { value: 'bass', label: '베이스 강화' },
-        ]);
-      }
-    } catch (error) {
-      console.error('Error loading EQ presets:', error);
-      setEqPresets([
-        { value: 'normal', label: '일반' },
-        { value: 'game', label: '게임' },
-        { value: 'music', label: '음악' },
-        { value: 'movie', label: '영화' },
-        { value: 'voice', label: '음성' },
-        { value: 'bass', label: '베이스 강화' },
-      ]);
-    }
-  };
-
-  const handleApply = async () => {
-    if (!window.electronAPI?.audio) {
-      console.error('Audio API is not available');
-      return;
-    }
-
-    setApplying(true);
-    setApplyResult(null);
-
-    try {
-      const settings = {
-        enabled,
-        gameSoundBoost,
-        baseSoundBoost,
-        masterVolume,
-        bassLevel,
-        trebleLevel,
-        eqPreset,
-        selectedModel,
-        modelSettings: selectedModel ? modelSettings[selectedModel] : null,
-      };
-
-      const result = await window.electronAPI.audio.applySoundBoost(settings);
-      setApplyResult(result);
-    } catch (error) {
-      console.error('Apply error:', error);
-      setApplyResult({
-        success: false,
-        error: error.message || '설정 적용 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setApplying(false);
-    }
-  };
-
-  const handleToggle = (type) => {
-    if (type === 'main') {
-      setEnabled(!enabled);
-    } else if (type === 'game') {
-      setGameSoundBoost({ ...gameSoundBoost, enabled: !gameSoundBoost.enabled });
-    } else if (type === 'base') {
-      setBaseSoundBoost({ ...baseSoundBoost, enabled: !baseSoundBoost.enabled });
-    }
-  };
+  const outputDevice = devices.find((d) => d.type === 'output');
 
   return (
-    <div className="sound-boost">
-      <div className="sound-boost-header">
-        <h2 className="sound-boost-title">Sound Boost</h2>
-        <p className="sound-boost-description">게임 중 사운드를 더 잘 들을 수 있도록 증폭 및 최적화하세요</p>
-      </div>
-
-      <div className="sound-boost-card">
-        <div className="toggle-section">
-          <div className="toggle-header">
-            <label className="toggle-label">Sound Boost 활성화</label>
-            <button
-              className={`toggle-button ${enabled ? 'active' : ''}`}
-              onClick={() => handleToggle('main')}
-            >
-              {enabled ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          <p className="toggle-description">
-            Sound Boost 기능을 활성화하면 게임 사운드와 베이스 사운드가 증폭됩니다.
-          </p>
-        </div>
-      </div>
-
-      {/* [실제 구현] Equalizer APO 상태 안내 — 설치 시 EQ/베이스/트레블이 시스템 전역에 실제 적용됨 */}
-      {apoInstalled === false && (
-        <div className="sound-boost-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: '240px' }}>
-              <div className="card-title" style={{ marginBottom: '4px' }}>실제 EQ · 베이스 · 트레블 활성화</div>
-              <p className="page-description" style={{ margin: 0 }}>
-                마스터 볼륨은 지금 바로 실제 반영됩니다. EQ·베이스·트레블까지 실제로 적용하려면 무료 시스템 이퀄라이저 <b>Equalizer APO</b>가 필요합니다 (설치 후 재부팅 · 출력 장치 선택). 설치되면 이 앱이 자동으로 설정을 적용합니다.
-              </p>
-            </div>
-            <button
-              className="action-button apply-button"
-              style={{ whiteSpace: 'nowrap' }}
-              onClick={handleInstallApo}
-              disabled={installingApo}
-            >
-              {installingApo ? '설치 준비 중...' : 'Equalizer APO 설치'}
-            </button>
-          </div>
-          {apoMsg && (
-            <p className="page-description" style={{ marginTop: '12px', marginBottom: 0 }}>{apoMsg}</p>
-          )}
-        </div>
-      )}
-      {apoInstalled === true && (
-        <div className="sound-boost-card">
-          <div className="success-message">
-            <div className="success-icon">✓</div>
-            <div className="success-text">
-              <h3 className="success-title" style={{ margin: 0 }}>Equalizer APO 감지됨 — EQ·베이스·트레블이 시스템에 실제 적용됩니다</h3>
-            </div>
+    <div className={`ai-console ${enabled ? 'on' : 'off'}`}>
+      {/* ===== Chassis header ===== */}
+      <div className="ai-header">
+        <div className="ai-brand">
+          <span className={`ai-power-led ${enabled ? 'lit' : ''}`} />
+          <div>
+            <div className="ai-brand-title">SOUND BOOST</div>
+            <div className="ai-brand-sub">STUDIO INTERFACE</div>
           </div>
         </div>
-      )}
-
-      {/* 오디오 처리 모델 선택 (enabled일 때만 표시) */}
-      {enabled && (
-        <div className="sound-boost-card">
-          <h3 className="card-title">오디오 처리 모델</h3>
-          <p className="page-description" style={{ marginBottom: '16px' }}>
-            고급 오디오 처리 라이브러리를 선택하여 더 나은 사운드 품질을 경험하세요.
-          </p>
-          
-          {detectingModels ? (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#b0b0b0' }}>
-              모델 감지 중...
-            </div>
-          ) : availableModels.length === 0 ? (
-            <div style={{ padding: '16px', textAlign: 'center', color: '#b0b0b0' }}>
-              사용 가능한 오디오 처리 모델이 없습니다.
-            </div>
-          ) : (
-            <div className="model-selection">
-              <div className="model-buttons">
-                {availableModels.map((model) => (
-                  <button
-                    key={model.id}
-                    className={`model-button ${selectedModel === model.id ? 'active' : ''}`}
-                    onClick={() => setSelectedModel(model.id)}
-                    disabled={!model.available}
-                  >
-                    <div className="model-button-content">
-                      <div className="model-name">{model.name}</div>
-                      <div className="model-description">{model.description}</div>
-                      {!model.available && (
-                        <div className="model-unavailable">사용 불가</div>
-                      )}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 선택된 모델별 설정 */}
-      {enabled && selectedModel && (
-        <div className="sound-boost-card">
-          <h3 className="card-title">
-            {selectedModel === 'superpowered' && 'Superpowered Audio SDK 설정'}
-            {selectedModel === 'miniaudio' && 'Miniaudio 설정'}
-            {selectedModel === 'portaudio' && 'PortAudio 설정'}
-            {selectedModel === 'freedsp' && 'FreeDSP 설정'}
-          </h3>
-          
-          {selectedModel === 'superpowered' && (
-            <div className="model-settings">
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">EQ (이퀄라이저)</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.superpowered.eqEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      superpowered: { ...prev.superpowered, eqEnabled: !prev.superpowered.eqEnabled }
-                    }))}
-                  >
-                    {modelSettings.superpowered.eqEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.superpowered.eqEnabled && (
-                  <div className="eq-bands">
-                    <label className="slider-label">10-Band EQ</label>
-                    {modelSettings.superpowered.eqBands.map((band, index) => (
-                      <div key={index} className="eq-band-item">
-                        <label className="eq-band-label">{index === 0 ? '31Hz' : index === 1 ? '62Hz' : index === 2 ? '125Hz' : index === 3 ? '250Hz' : index === 4 ? '500Hz' : index === 5 ? '1kHz' : index === 6 ? '2kHz' : index === 7 ? '4kHz' : index === 8 ? '8kHz' : '16kHz'}</label>
-                        <input
-                          type="range"
-                          min="-12"
-                          max="12"
-                          value={band}
-                          onChange={(e) => {
-                            const newBands = [...modelSettings.superpowered.eqBands];
-                            newBands[index] = parseInt(e.target.value);
-                            setModelSettings(prev => ({
-                              ...prev,
-                              superpowered: { ...prev.superpowered, eqBands: newBands }
-                            }));
-                          }}
-                          className="slider"
-                        />
-                        <span className="eq-band-value">{band > 0 ? '+' : ''}{band}dB</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">압축 (Compression)</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.superpowered.compressionEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      superpowered: { ...prev.superpowered, compressionEnabled: !prev.superpowered.compressionEnabled }
-                    }))}
-                  >
-                    {modelSettings.superpowered.compressionEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.superpowered.compressionEnabled && (
-                  <div className="slider-section">
-                    <label className="slider-label">압축 비율: {modelSettings.superpowered.compressionRatio}:1</label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="10"
-                      step="0.1"
-                      value={modelSettings.superpowered.compressionRatio}
-                      onChange={(e) => setModelSettings(prev => ({
-                        ...prev,
-                        superpowered: { ...prev.superpowered, compressionRatio: parseFloat(e.target.value) }
-                      }))}
-                      className="slider"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">필터</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.superpowered.filterEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      superpowered: { ...prev.superpowered, filterEnabled: !prev.superpowered.filterEnabled }
-                    }))}
-                  >
-                    {modelSettings.superpowered.filterEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.superpowered.filterEnabled && (
-                  <div className="slider-section">
-                    <label className="slider-label">컷오프 주파수: {modelSettings.superpowered.filterCutoff}Hz</label>
-                    <input
-                      type="range"
-                      min="20"
-                      max="20000"
-                      value={modelSettings.superpowered.filterCutoff}
-                      onChange={(e) => setModelSettings(prev => ({
-                        ...prev,
-                        superpowered: { ...prev.superpowered, filterCutoff: parseInt(e.target.value) }
-                      }))}
-                      className="slider"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">믹싱</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.superpowered.mixingEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      superpowered: { ...prev.superpowered, mixingEnabled: !prev.superpowered.mixingEnabled }
-                    }))}
-                  >
-                    {modelSettings.superpowered.mixingEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">효과 처리</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.superpowered.effectsEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      superpowered: { ...prev.superpowered, effectsEnabled: !prev.superpowered.effectsEnabled }
-                    }))}
-                  >
-                    {modelSettings.superpowered.effectsEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selectedModel === 'miniaudio' && (
-            <div className="model-settings">
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">필터/프로세싱</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.miniaudio.filterEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      miniaudio: { ...prev.miniaudio, filterEnabled: !prev.miniaudio.filterEnabled }
-                    }))}
-                  >
-                    {modelSettings.miniaudio.filterEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.miniaudio.filterEnabled && (
-                  <>
-                    <div className="slider-section">
-                      <label className="slider-label">필터 타입</label>
-                      <select
-                        value={modelSettings.miniaudio.filterType}
-                        onChange={(e) => setModelSettings(prev => ({
-                          ...prev,
-                          miniaudio: { ...prev.miniaudio, filterType: e.target.value }
-                        }))}
-                        className="preset-select"
-                      >
-                        <option value="lowpass">Low Pass</option>
-                        <option value="highpass">High Pass</option>
-                        <option value="bandpass">Band Pass</option>
-                        <option value="notch">Notch</option>
-                      </select>
-                    </div>
-                    <div className="slider-section">
-                      <label className="slider-label">컷오프 주파수: {modelSettings.miniaudio.filterCutoff}Hz</label>
-                      <input
-                        type="range"
-                        min="20"
-                        max="20000"
-                        value={modelSettings.miniaudio.filterCutoff}
-                        onChange={(e) => setModelSettings(prev => ({
-                          ...prev,
-                          miniaudio: { ...prev.miniaudio, filterCutoff: parseInt(e.target.value) }
-                        }))}
-                        className="slider"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">프로세싱</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.miniaudio.processingEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      miniaudio: { ...prev.miniaudio, processingEnabled: !prev.miniaudio.processingEnabled }
-                    }))}
-                  >
-                    {modelSettings.miniaudio.processingEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.miniaudio.processingEnabled && (
-                  <div className="slider-section">
-                    <label className="slider-label">지연 시간: {modelSettings.miniaudio.processingLatency}ms</label>
-                    <input
-                      type="range"
-                      min="1"
-                      max="100"
-                      value={modelSettings.miniaudio.processingLatency}
-                      onChange={(e) => setModelSettings(prev => ({
-                        ...prev,
-                        miniaudio: { ...prev.miniaudio, processingLatency: parseInt(e.target.value) }
-                      }))}
-                      className="slider"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">믹싱</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.miniaudio.mixingEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      miniaudio: { ...prev.miniaudio, mixingEnabled: !prev.miniaudio.mixingEnabled }
-                    }))}
-                  >
-                    {modelSettings.miniaudio.mixingEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {selectedModel === 'portaudio' && (
-            <div className="model-settings">
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">오디오 I/O</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.portaudio.ioEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      portaudio: { ...prev.portaudio, ioEnabled: !prev.portaudio.ioEnabled }
-                    }))}
-                  >
-                    {modelSettings.portaudio.ioEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">DSP 처리</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.portaudio.dspEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      portaudio: { ...prev.portaudio, dspEnabled: !prev.portaudio.dspEnabled }
-                    }))}
-                  >
-                    {modelSettings.portaudio.dspEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.portaudio.dspEnabled && (
-                  <>
-                    <div className="slider-section">
-                      <label className="slider-label">지연 시간: {modelSettings.portaudio.latency}ms</label>
-                      <input
-                        type="range"
-                        min="10"
-                        max="200"
-                        value={modelSettings.portaudio.latency}
-                        onChange={(e) => setModelSettings(prev => ({
-                          ...prev,
-                          portaudio: { ...prev.portaudio, latency: parseInt(e.target.value) }
-                        }))}
-                        className="slider"
-                      />
-                    </div>
-                    <div className="slider-section">
-                      <label className="slider-label">샘플 레이트: {modelSettings.portaudio.sampleRate}Hz</label>
-                      <select
-                        value={modelSettings.portaudio.sampleRate}
-                        onChange={(e) => setModelSettings(prev => ({
-                          ...prev,
-                          portaudio: { ...prev.portaudio, sampleRate: parseInt(e.target.value) }
-                        }))}
-                        className="preset-select"
-                      >
-                        <option value="44100">44100 Hz</option>
-                        <option value="48000">48000 Hz</option>
-                        <option value="96000">96000 Hz</option>
-                        <option value="192000">192000 Hz</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
-          {selectedModel === 'freedsp' && (
-            <div className="model-settings">
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">EQ (이퀄라이저)</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.freedsp.eqEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      freedsp: { ...prev.freedsp, eqEnabled: !prev.freedsp.eqEnabled }
-                    }))}
-                  >
-                    {modelSettings.freedsp.eqEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.freedsp.eqEnabled && (
-                  <div className="eq-bands">
-                    <label className="slider-label">10-Band EQ</label>
-                    {modelSettings.freedsp.eqBands.map((band, index) => (
-                      <div key={index} className="eq-band-item">
-                        <label className="eq-band-label">{index === 0 ? '31Hz' : index === 1 ? '62Hz' : index === 2 ? '125Hz' : index === 3 ? '250Hz' : index === 4 ? '500Hz' : index === 5 ? '1kHz' : index === 6 ? '2kHz' : index === 7 ? '4kHz' : index === 8 ? '8kHz' : '16kHz'}</label>
-                        <input
-                          type="range"
-                          min="-12"
-                          max="12"
-                          value={band}
-                          onChange={(e) => {
-                            const newBands = [...modelSettings.freedsp.eqBands];
-                            newBands[index] = parseInt(e.target.value);
-                            setModelSettings(prev => ({
-                              ...prev,
-                              freedsp: { ...prev.freedsp, eqBands: newBands }
-                            }));
-                          }}
-                          className="slider"
-                        />
-                        <span className="eq-band-value">{band > 0 ? '+' : ''}{band}dB</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="setting-section">
-                <div className="setting-header">
-                  <label className="setting-label">베이스 강화</label>
-                  <button
-                    className={`toggle-button small ${modelSettings.freedsp.bassBoostEnabled ? 'active' : ''}`}
-                    onClick={() => setModelSettings(prev => ({
-                      ...prev,
-                      freedsp: { ...prev.freedsp, bassBoostEnabled: !prev.freedsp.bassBoostEnabled }
-                    }))}
-                  >
-                    {modelSettings.freedsp.bassBoostEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {modelSettings.freedsp.bassBoostEnabled && (
-                  <div className="slider-section">
-                    <label className="slider-label">베이스 레벨: {modelSettings.freedsp.bassBoostLevel}dB</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="20"
-                      value={modelSettings.freedsp.bassBoostLevel}
-                      onChange={(e) => setModelSettings(prev => ({
-                        ...prev,
-                        freedsp: { ...prev.freedsp, bassBoostLevel: parseInt(e.target.value) }
-                      }))}
-                      className="slider"
-                    />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      <div className="sound-boost-card">
-        <h3 className="card-title">게임 사운드 증폭</h3>
-        <div className="setting-section">
-          <div className="setting-header">
-            <label className="setting-label">게임 사운드 증폭</label>
-            <button
-              className={`toggle-button small ${gameSoundBoost.enabled ? 'active' : ''}`}
-              onClick={() => handleToggle('game')}
-            >
-              {gameSoundBoost.enabled ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          {gameSoundBoost.enabled && (
-            <div className="slider-section">
-              <label className="slider-label">증폭 레벨: {gameSoundBoost.level}%</label>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={gameSoundBoost.level}
-                onChange={(e) => setGameSoundBoost({ ...gameSoundBoost, level: parseInt(e.target.value) })}
-                className="slider"
-              />
-              <div className="slider-values">
-                <span>0%</span>
-                <span>200%</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="sound-boost-card">
-        <h3 className="card-title">베이스 사운드 증폭</h3>
-        <div className="setting-section">
-          <div className="setting-header">
-            <label className="setting-label">베이스 사운드 증폭</label>
-            <button
-              className={`toggle-button small ${baseSoundBoost.enabled ? 'active' : ''}`}
-              onClick={() => handleToggle('base')}
-            >
-              {baseSoundBoost.enabled ? 'ON' : 'OFF'}
-            </button>
-          </div>
-          {baseSoundBoost.enabled && (
-            <div className="slider-section">
-              <label className="slider-label">증폭 레벨: {baseSoundBoost.level}%</label>
-              <input
-                type="range"
-                min="0"
-                max="200"
-                value={baseSoundBoost.level}
-                onChange={(e) => setBaseSoundBoost({ ...baseSoundBoost, level: parseInt(e.target.value) })}
-                className="slider"
-              />
-              <div className="slider-values">
-                <span>0%</span>
-                <span>200%</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {devices.length > 0 && (
-        <div className="sound-boost-card">
-          <h3 className="card-title">연결된 오디오 장비</h3>
-          <div className="setting-section">
-            {devices.filter(d => d.type === 'output').length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <label className="setting-label" style={{ marginBottom: '8px', display: 'block' }}>오디오 출력 장비</label>
-                {devices.filter(d => d.type === 'output').map((device, index) => (
-                  <div key={device.id || index} style={{ padding: '8px 0', color: '#b0b0b0', fontSize: '14px' }}>
-                    • {device.name} {device.status && device.status !== 'OK' ? `(${device.status})` : ''}
-                  </div>
-                ))}
-              </div>
-            )}
-            {devices.filter(d => d.type === 'input').length > 0 && (
-              <div>
-                <label className="setting-label" style={{ marginBottom: '8px', display: 'block' }}>마이크 입력 장비</label>
-                {devices.filter(d => d.type === 'input').map((device, index) => (
-                  <div key={device.id || index} style={{ padding: '8px 0', color: '#b0b0b0', fontSize: '14px' }}>
-                    • {device.name} {device.status && device.status !== 'OK' ? `(${device.status})` : ''}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      <div className="sound-boost-card">
-        <h3 className="card-title">사운드 설정</h3>
-        <div className="settings-grid">
-          <div className="setting-item">
-            <label className="setting-label">마스터 볼륨</label>
-            <div className="slider-section">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={masterVolume}
-                onChange={(e) => setMasterVolume(parseInt(e.target.value))}
-                className="slider"
-              />
-              <div className="slider-value">{masterVolume}%</div>
-            </div>
-          </div>
-
-          <div className="setting-item">
-            <label className="setting-label">베이스</label>
-            <div className="slider-section">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={bassLevel}
-                onChange={(e) => setBassLevel(parseInt(e.target.value))}
-                className="slider"
-              />
-              <div className="slider-value">{bassLevel}%</div>
-            </div>
-          </div>
-
-          <div className="setting-item">
-            <label className="setting-label">트레블</label>
-            <div className="slider-section">
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={trebleLevel}
-                onChange={(e) => setTrebleLevel(parseInt(e.target.value))}
-                className="slider"
-              />
-              <div className="slider-value">{trebleLevel}%</div>
-            </div>
-          </div>
-
-          <div className="setting-item">
-            <label className="setting-label">EQ 프리셋</label>
-            <select
-              value={eqPreset}
-              onChange={(e) => setEqPreset(e.target.value)}
-              className="preset-select"
-            >
-              {eqPresets.length > 0 ? (
-                eqPresets.map((preset) => (
-                  <option key={preset.value} value={preset.value}>
-                    {preset.label}
-                  </option>
-                ))
-              ) : (
-                <>
-                  <option value="normal">일반</option>
-                  <option value="game">게임</option>
-                  <option value="music">음악</option>
-                  <option value="movie">영화</option>
-                  <option value="voice">음성</option>
-                  <option value="bass">베이스 강화</option>
-                </>
-              )}
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="sound-boost-card">
-        <div className="action-section">
-          <button
-            className="action-button apply-button"
-            onClick={handleApply}
-            disabled={applying}
-          >
-            {applying ? '적용 중...' : '설정 적용'}
+        <div className="ai-header-right">
+          <span className="ai-status-text">{enabled ? (applying ? 'APPLYING…' : 'ACTIVE') : 'STANDBY'}</span>
+          <button className={`ai-power-btn ${enabled ? 'on' : ''}`} onClick={togglePower} title="전원 ON/OFF">
+            <span className="ai-power-glyph">⏻</span>
+            <span className="ai-power-label">{enabled ? 'ON' : 'OFF'}</span>
           </button>
         </div>
       </div>
 
-      {applying && (
-        <div className="sound-boost-card">
-          <div className="applying-section">
-            <div className="applying-message">사운드 설정 적용 중...</div>
-            <div className="progress-bar-container">
-              <div className="progress-bar">
-                <div className="progress-bar-fill"></div>
+      {/* ===== Top rack: monitor/tone knobs + output meter ===== */}
+      <div className="ai-rack">
+        <div className="ai-module ai-knobs">
+          <div className="ai-module-label">MONITOR &nbsp;/&nbsp; TONE</div>
+          <div className="ai-knob-row">
+            <Knob label="MONITOR" value={masterVolume} min={0} max={100} unit="%" onChange={changeVal(setMasterVolume)} size={104} accent="#35e0d0" />
+            <Knob label="BASS" value={bassLevel} min={0} max={100} unit="" onChange={changeVal(setBassLevel)} accent="#7aa2ff" />
+            <Knob label="TREBLE" value={trebleLevel} min={0} max={100} unit="" onChange={changeVal(setTrebleLevel)} accent="#ffb84d" />
+          </div>
+        </div>
+        <div className="ai-module ai-output">
+          <div className="ai-module-label">OUTPUT</div>
+          <div className="ai-output-body">
+            <LedMeter level={enabled ? masterVolume : 0} />
+            <div className="ai-output-info">
+              <div className="ai-io-line"><span className="ai-io-dot on" /> {outputDevice ? outputDevice.name : '기본 출력 장치'}</div>
+              <div className="ai-io-sub">{enabled ? '신호 전송 중' : '대기'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Graphic EQ module ===== */}
+      <div className="ai-module ai-eq">
+        <div className="ai-module-label">10-BAND GRAPHIC EQ <span className="ai-db-hint">±12 dB</span></div>
+        <div className="ai-eq-body">
+          <canvas ref={curveRef} width={760} height={116} className="ai-eq-curve" />
+          <div className="ai-eq-faders">
+            {eqBands.map((g, i) => (
+              <div className="ai-fader" key={i}>
+                <div className="ai-fader-val">{g > 0 ? '+' : ''}{g}</div>
+                <input
+                  type="range" min={-12} max={12} step={1} value={g}
+                  className="ai-vfader"
+                  onChange={(e) => changeBand(i, parseInt(e.target.value))}
+                  onDoubleClick={() => changeBand(i, 0)}
+                />
+                <div className="ai-fader-freq">{EQ_FREQS[i]}</div>
               </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ===== Presets ===== */}
+      <div className="ai-module ai-presets">
+        <div className="ai-module-label">PRESET</div>
+        <div className="ai-preset-row">
+          {Object.keys(PRESETS).map((key) => (
+            <button
+              key={key}
+              className={`ai-preset-btn ${eqPreset === key ? 'active' : ''}`}
+              onClick={() => applyPreset(key)}
+            >
+              {PRESET_LABELS[key]}
+            </button>
+          ))}
+          {eqPreset === 'custom' && <span className="ai-preset-custom">CUSTOM</span>}
+        </div>
+      </div>
+
+      {/* ===== Enhancers ===== */}
+      <div className="ai-module ai-enhancers">
+        <div className="ai-module-label">ENHANCERS</div>
+        <div className="ai-enh-grid">
+          <div className={`ai-enh ${gameBoost.enabled ? 'on' : ''}`}>
+            <div className="ai-enh-head">
+              <span className="ai-enh-name">GAME BOOST</span>
+              <button className={`ai-switch ${gameBoost.enabled ? 'on' : ''}`} onClick={() => toggleEnhancer('game')}>
+                <span className="ai-switch-knob" />
+              </button>
+            </div>
+            <div className="ai-enh-slider">
+              <input type="range" min={0} max={200} value={gameBoost.level} disabled={!gameBoost.enabled}
+                onChange={(e) => changeEnhancerLevel('game', parseInt(e.target.value))} className="ai-hslider" />
+              <span className="ai-enh-lvl">{gameBoost.level}%</span>
+            </div>
+          </div>
+          <div className={`ai-enh ${bassBoost.enabled ? 'on' : ''}`}>
+            <div className="ai-enh-head">
+              <span className="ai-enh-name">BASS BOOST</span>
+              <button className={`ai-switch ${bassBoost.enabled ? 'on' : ''}`} onClick={() => toggleEnhancer('base')}>
+                <span className="ai-switch-knob" />
+              </button>
+            </div>
+            <div className="ai-enh-slider">
+              <input type="range" min={0} max={200} value={bassBoost.level} disabled={!bassBoost.enabled}
+                onChange={(e) => changeEnhancerLevel('base', parseInt(e.target.value))} className="ai-hslider" />
+              <span className="ai-enh-lvl">{bassBoost.level}%</span>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
-      {applyResult && applyResult.success && (
-        <div className="sound-boost-card">
-          <div className="success-message">
-            <div className="success-icon">✓</div>
-            <div className="success-text">
-              <h3 className="success-title">설정이 성공적으로 적용되었습니다.</h3>
-              <p className="success-description">
-                사운드 증폭 및 설정이 적용되었습니다.
-              </p>
+      {/* ===== EQ engine (Equalizer APO) status ===== */}
+      <div className="ai-module ai-engine">
+        <div className="ai-engine-left">
+          <div className="ai-module-label" style={{ marginBottom: 6 }}>EQ ENGINE</div>
+          {apoInstalled === true && (
+            <div className="ai-engine-status ok"><span className="ai-io-dot on" /> Equalizer APO 감지됨 — EQ·베이스·트레블 실제 적용</div>
+          )}
+          {apoInstalled === false && (
+            <div className="ai-engine-status warn">
+              <span className="ai-io-dot warn" /> 볼륨은 즉시 적용됩니다. EQ·베이스·트레블 실제 적용엔 Equalizer APO가 필요합니다.
             </div>
-          </div>
+          )}
+          {apoInstalled === null && (
+            <div className="ai-engine-status"><span className="ai-io-dot" /> 엔진 확인 중…</div>
+          )}
+          {apoMsg && <div className="ai-engine-msg">{apoMsg}</div>}
         </div>
-      )}
-
-      {applyResult && !applyResult.success && (
-        <div className="sound-boost-card">
-          <div className="error-message">
-            {applyResult.error || '설정 적용 중 오류가 발생했습니다.'}
-          </div>
-        </div>
-      )}
+        {apoInstalled === false && (
+          <button className="ai-install-btn" onClick={handleInstallApo} disabled={installingApo}>
+            {installingApo ? '설치 준비 중…' : 'Equalizer APO 설치'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
