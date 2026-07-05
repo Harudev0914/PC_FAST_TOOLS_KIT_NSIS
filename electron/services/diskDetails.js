@@ -227,6 +227,29 @@ async function getDiskDetails(diskLetter = 'C:') {
         readSpeed = Math.round((rIO_sec * avgBlockSize / 1024) * 100) / 100;
         writeSpeed = Math.round((wIO_sec * avgBlockSize / 1024) * 100) / 100;
       }
+
+      // [실제 구현] Windows에서는 si.disksIO()/si.fsStats()가 0/null을 반환해 활성시간·읽기/쓰기
+      // 속도 차트가 항상 비어 있었다. 성능 카운터(Win32_PerfFormattedData_PerfDisk_LogicalDisk)로
+      // 해당 드라이브의 실제 값을 채운다. CIM 포맷 데이터는 샘플 지연 없이 즉시 반환된다.
+      if (process.platform === 'win32' && activeTime === 0 && readSpeed === 0 && writeSpeed === 0) {
+        try {
+          const nameFilter = String(diskLetter).replace(/[^A-Za-z]/g, '').toUpperCase() + ':';
+          const ps = `Get-CimInstance Win32_PerfFormattedData_PerfDisk_LogicalDisk -Filter "Name='${nameFilter}'" | Select-Object PercentDiskTime,DiskReadBytesPersec,DiskWriteBytesPersec,AvgDisksecPerTransfer,DiskTransfersPersec | ConvertTo-Json -Compress`;
+          const { stdout } = await execPromise(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${ps}"`, { timeout: 5000, windowsHide: true, maxBuffer: 1024 * 1024 });
+          if (stdout && stdout.trim()) {
+            const parsed = JSON.parse(stdout);
+            const p = Array.isArray(parsed) ? parsed[0] : parsed;
+            if (p) {
+              activeTime = Math.min(100, Math.max(0, parseFloat(p.PercentDiskTime) || 0));
+              readSpeed = Math.round(((parseFloat(p.DiskReadBytesPersec) || 0) / 1024) * 100) / 100;   // bytes/s → KB/s
+              writeSpeed = Math.round(((parseFloat(p.DiskWriteBytesPersec) || 0) / 1024) * 100) / 100;  // bytes/s → KB/s
+              const avgSec = parseFloat(p.AvgDisksecPerTransfer) || 0;
+              if (avgSec > 0) responseTime = Math.round(avgSec * 1000); // s → ms
+              transfersPerSec = parseFloat(p.DiskTransfersPersec) || transfersPerSec;
+            }
+          }
+        } catch (e) { /* 실패 시 0 유지 (폴백) */ }
+      }
     } catch (error) {
       console.error('Error getting disk IO stats:', error);
     }
