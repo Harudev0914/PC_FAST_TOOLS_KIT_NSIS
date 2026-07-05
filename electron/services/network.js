@@ -212,8 +212,7 @@ async function optimize(options = {}) {
               5000
             );
 
-            results.qosOptimized = true;
-            results.operations.push('QoS 패킷 스케줄러 최적화 완료');
+            // [고도화] NonBestEffortLimit을 잘못된 레지스트리 위치에 써서 무효 → 성공 보고 제거(오탐 방지)
           } catch (error) {
           }
         })(),
@@ -290,8 +289,7 @@ async function optimize(options = {}) {
               5000
             );
 
-            results.bufferOptimized = true;
-            results.operations.push('네트워크 버퍼 크기 조정 완료');
+            // [고도화] TcpReceiveWindow/TcpSendWindow는 자동 튜닝에 무시되는 레거시 값 → 성공 보고 제거(오탐 방지)
           } catch (error) {
           }
         })(),
