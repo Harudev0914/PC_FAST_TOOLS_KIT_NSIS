@@ -561,7 +561,7 @@ ipcMain.handle('cpu:optimize', async () => {
 
 ipcMain.handle('cpu:optimizeSafe', async () => {
   try {
-    return await cpuOptimizeService.optimizeSafe();
+    return await cpuOptimizeService.optimize();
   } catch (error) {
     console.error('Error in cpu:optimizeSafe:', error);
     return { success: false, error: error.message };

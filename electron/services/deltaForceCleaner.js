@@ -577,7 +577,9 @@ async function manageApplicationsAndServices(options = {}) {
 // Windows API로 디렉토리 검색
 async function findDirectory() {
   try {
-    const foundPath = await searchDirectoryWithWindowsAPI('Delta Force');
+    // [고도화] 존재하지 않던 searchDirectoryWithWindowsAPI 호출로 항상 예외였음.
+    // scan()이 DEFAULT_PATH를 기본·폴백으로 쓰므로 기본 경로를 사용해 자동 탐색을 동작시킨다.
+    const foundPath = DEFAULT_PATH;
     if (foundPath) {
       // 찾은 경로를 스캔하여 파일 정보 가져오기
       const scanResult = await scan(foundPath);

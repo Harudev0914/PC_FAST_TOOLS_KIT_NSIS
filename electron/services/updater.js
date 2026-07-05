@@ -8,10 +8,13 @@
 //   사용 예: new Registry({ hive: Registry.HKLM, key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall' }) - 설치된 프로그램 레지스트리 키 접근
 //   .keys() - 하위 키 목록 조회, .get() - 값 조회
 
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');
-const execAsync = promisify(exec);
+// [고도화] exec 기본 타임아웃/버퍼 래퍼 + 셸 없는 execFile
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const execFileAsync = promisify(execFile);
 
 async function getInstalled() {
   const software = [];
@@ -170,9 +173,15 @@ async function checkUpdates(software) {
 }
 
 async function update(software) {
+  // [보안] software.name(레지스트리 유래)을 셸에 보간하지 않고 execFile 인자로 전달 → 명령 주입 차단.
+  const name = String(software && software.name ? software.name : '');
+  if (!name) {
+    return { success: false, error: 'Invalid software name', message: 'Please update manually through the software\'s built-in updater' };
+  }
   try {
-    const { stdout } = await execAsync(`winget upgrade "${software.name}"`);
-    
+    // 실제 업그레이드는 수 분 걸릴 수 있어 타임아웃 5분 + 비대화형 플래그로 프롬프트 대기 방지
+    await execFileAsync('winget', ['upgrade', '--name', name, '--silent', '--accept-package-agreements', '--accept-source-agreements'], { timeout: 300000, maxBuffer: 1024 * 1024 * 20 });
+
     return {
       success: true,
       message: `Update initiated for ${software.name}`,

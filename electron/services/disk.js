@@ -74,7 +74,11 @@ async function getDiskType(diskLetter = 'C:') {
 }
 
 async function optimize(options = {}) {
-  const { requestAdminPermission = false, diskLetter = 'C:' } = options;
+  const { requestAdminPermission = false } = options;
+  // [보안] diskLetter를 단일 드라이브 문자로 검증·정규화한다. 이 한 곳에서 막으면
+  // defrag/chkdsk/Optimize-Volume 등 이 값을 쓰는 모든 명령의 주입이 차단된다.
+  const _dl = /^([A-Za-z]):?$/.exec(String(options.diskLetter ?? 'C'));
+  const diskLetter = (_dl ? _dl[1].toUpperCase() : 'C') + ':';
   
   const results = {
     success: true,

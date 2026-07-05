@@ -8,9 +8,12 @@
 // PowerShell 사용: Get-WmiObject Win32_PnPEntity로 PnP 장치(드라이버) 목록 조회
 // driverquery 사용: Windows 내장 명령어로 드라이버 목록 조회 (PowerShell 실패 시 폴백)
 
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+// [고도화] exec 기본 타임아웃/버퍼 래퍼 + 셸 없는 execFile
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const execFileAsync = promisify(execFile);
 
 async function getDrivers() {
   try {
@@ -71,31 +74,24 @@ async function checkUpdates() {
 }
 
 async function update(driver) {
+  // [보안] driver.id(WMI/IPC 유래)를 셸에 보간하지 않고 execFile 인자로 전달 → 명령 주입 차단.
+  const id = String(driver && driver.id ? driver.id : '');
+  if (!id) {
+    return { success: false, error: 'Invalid driver id', message: 'Please update drivers manually through Device Manager' };
+  }
   try {
-    const { stdout } = await execAsync(
-      `pnputil /update-driver "${driver.id}" /install`
-    );
-    
+    // 드라이버 설치는 오래 걸릴 수 있어 타임아웃 5분
+    await execFileAsync('pnputil', ['/update-driver', id, '/install'], { timeout: 300000, maxBuffer: 1024 * 1024 * 20 });
     return {
       success: true,
       message: `Driver update initiated for ${driver.name}`,
     };
   } catch (error) {
-    try {
-      await execAsync(
-        `powershell -Command "Update-Driver -HardwareId '${driver.id}'"`
-      );
-      return {
-        success: true,
-        message: `Driver update initiated for ${driver.name}`,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-        message: 'Please update drivers manually through Device Manager',
-      };
-    }
+    return {
+      success: false,
+      error: error.message,
+      message: 'Please update drivers manually through Device Manager',
+    };
   }
 }
 
