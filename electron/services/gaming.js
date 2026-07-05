@@ -313,6 +313,16 @@ async function enableGameMode(options = {}) {
       } catch (error) {
         results.errors.push({ action: 'mmcss', error: error?.message || '알 수 없는 오류' });
       }
+
+      // [고도화] 시스템 응답성 향상 + 전경 프로세스 전원 스로틀링 해제(노트북에서 특히 효과)
+      try {
+        // SystemResponsiveness=10 (0은 MMCSS 오디오 글리치 보고가 있어 10 권장)
+        await execAsync('reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 10 /f', { timeout: 5000 }).catch(() => {});
+        await execAsync('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f', { timeout: 5000 }).catch(() => {});
+        results.operations.push('시스템 응답성 향상 + 전원 스로틀링 해제');
+      } catch (error) {
+        results.errors.push({ action: 'systemResponsiveness', error: error?.message || '알 수 없는 오류' });
+      }
     }
 
     gamingModeEnabled = true;
@@ -357,6 +367,10 @@ async function disableGameMode() {
       await setHKCUDword('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects', 'VisualFXSetting', 0);
 
       await applyUserParams();
+
+      // [고도화] 시스템 응답성/전원 스로틀 기본값 복원 (관리자면 적용, 아니면 조용히 무시)
+      await execAsync('reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v SystemResponsiveness /t REG_DWORD /d 20 /f', { timeout: 5000 }).catch(() => {});
+      await execAsync('reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 0 /f', { timeout: 5000 }).catch(() => {});
 
       // 전원 계획: 균형 조정
       await execAsync('powercfg /setactive 381b4222-f694-41f0-9685-ff5bb260df2e', { timeout: 5000 }).catch(() => {});

@@ -80,9 +80,13 @@ async function scanDirectory(dirPath, options = {}) {
           
           if (stats.size >= minSize && stats.size <= maxSize) {
             const buffer = Buffer.alloc(8);
+            // [고도화] read 실패 시에도 fd가 항상 닫히도록 try/finally (파일 디스크립터 누수 방지)
             const fd = await fs.open(fullPath, 'r');
-            await fd.read(buffer, 0, 8, 0);
-            await fd.close();
+            try {
+              await fd.read(buffer, 0, 8, 0);
+            } finally {
+              await fd.close();
+            }
 
             let fileType = 'unknown';
             for (const [type, signature] of Object.entries(FILE_SIGNATURES)) {

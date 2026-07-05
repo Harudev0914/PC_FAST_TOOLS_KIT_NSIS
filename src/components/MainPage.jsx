@@ -29,7 +29,8 @@ function MainPage() {
   useEffect(() => {
     const checkGlobalProgress = () => {
       if (window.__globalOptimizationProgress && window.__globalOptimizationProgress.active) {
-        setGlobalOptimizationProgress(window.__globalOptimizationProgress);
+        // [고도화] 새 객체로 복사해 전달 (동일 참조면 React가 setState를 bail out해 오버레이가 안 갱신됨)
+        setGlobalOptimizationProgress({ ...window.__globalOptimizationProgress });
       } else {
         setGlobalOptimizationProgress(null);
       }
