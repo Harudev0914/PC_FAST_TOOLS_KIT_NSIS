@@ -1,27 +1,28 @@
 /* ============================================================
    SOUND BOOST — Audio Interface / Studio Console UI
+   (sharp corners, base #14161B)
    ============================================================ */
 .ai-console {
   --accent: #35e0d0;
-  --panel: #14181e;
-  --panel-2: #0d1015;
+  --bg: #14161b;
+  --module: #191c22;
   --edge: #262d36;
   --text: #c9d2db;
   --muted: #6b7885;
   max-width: 860px;
   margin: 0 auto;
   padding: 18px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #1b2027 0%, #0d1015 100%);
+  border-radius: 0;
+  background: var(--bg);
   border: 1px solid #2b333d;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
   user-select: none;
   transition: box-shadow 0.35s ease;
 }
 .ai-console.on {
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05),
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 0 0 1px rgba(53, 224, 208, 0.18);
 }
 
@@ -55,11 +56,11 @@
 
 .ai-power-btn {
   display: flex; align-items: center; gap: 8px;
-  padding: 9px 16px; border-radius: 10px;
-  background: linear-gradient(180deg, #232a32, #171b21);
+  padding: 9px 16px; border-radius: 0;
+  background: #1e242b;
   border: 1px solid #333c47; color: var(--muted);
   cursor: pointer; transition: all 0.25s;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 .ai-power-btn .ai-power-glyph { font-size: 18px; line-height: 1; }
 .ai-power-btn .ai-power-label { font-family: 'Consolas', monospace; font-weight: 700; letter-spacing: 2px; font-size: 12px; }
@@ -72,12 +73,12 @@
 
 /* ---- Modules (rack units) ---- */
 .ai-module {
-  background: linear-gradient(180deg, #171c22 0%, #10141a 100%);
+  background: var(--module);
   border: 1px solid var(--edge);
-  border-radius: 12px;
+  border-radius: 0;
   padding: 14px 16px;
   margin-bottom: 14px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), inset 0 -14px 26px rgba(0, 0, 0, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 .ai-module-label {
   font-family: 'Consolas', monospace; font-size: 11px; letter-spacing: 3px;
@@ -96,7 +97,7 @@
 .ai-knob-fill { fill: none; stroke-width: 6; stroke-linecap: round; }
 .ai-console.on .ai-knob-fill { filter: drop-shadow(0 0 5px currentColor); }
 .ai-console.off .ai-knob-fill { opacity: 0.45; }
-.ai-knob-body { fill: #12161c; }
+.ai-knob-body { fill: #101318; }
 .ai-knob-bevel { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 1.5; }
 .ai-knob-pointer { stroke-width: 2.6; stroke-linecap: round; }
 .ai-console.off .ai-knob-pointer { stroke: #4a5561 !important; }
@@ -108,10 +109,10 @@
 .ai-output-body { display: flex; gap: 14px; align-items: stretch; }
 .ai-meter {
   display: flex; flex-direction: column; gap: 3px; padding: 6px 8px;
-  background: #0a0d11; border-radius: 6px; border: 1px solid #22282f;
+  background: #0a0d11; border-radius: 0; border: 1px solid #22282f;
 }
 .ai-meter-seg {
-  width: 20px; height: 7px; border-radius: 2px; background: #1b2027;
+  width: 20px; height: 7px; border-radius: 0; background: #1b2027;
   box-shadow: inset 0 0 2px #000;
 }
 .ai-meter-seg.on.green { background: #2fe08a; box-shadow: 0 0 6px rgba(47, 224, 138, 0.7); }
@@ -127,8 +128,8 @@
 /* ---- Graphic EQ ---- */
 .ai-eq-body { display: flex; flex-direction: column; gap: 10px; }
 .ai-eq-curve {
-  width: 100%; height: 116px; border-radius: 8px;
-  background: linear-gradient(180deg, #0a0d11, #0d1116);
+  width: 100%; height: 116px; border-radius: 0;
+  background: #0a0d11;
   border: 1px solid #20262e;
 }
 .ai-eq-faders { display: flex; justify-content: space-between; gap: 4px; padding: 4px 6px 0; }
@@ -147,13 +148,13 @@
   cursor: ns-resize;
 }
 .ai-vfader::-webkit-slider-runnable-track {
-  width: 5px; border-radius: 3px;
-  background: linear-gradient(180deg, #262d36, #12161c);
+  width: 5px; border-radius: 0;
+  background: #1a1e25;
   box-shadow: inset 0 0 3px #000;
 }
 .ai-vfader::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 22px; height: 12px; border-radius: 3px;
+  width: 22px; height: 12px; border-radius: 0;
   background: linear-gradient(180deg, #4a5561, #2a3038);
   border: 1px solid #5a6673;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
@@ -168,8 +169,8 @@
 /* ---- Presets ---- */
 .ai-preset-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .ai-preset-btn {
-  padding: 8px 16px; border-radius: 8px; cursor: pointer;
-  background: linear-gradient(180deg, #1d232b, #141920);
+  padding: 8px 16px; border-radius: 0; cursor: pointer;
+  background: #1a1e25;
   border: 1px solid #2e3742; color: var(--muted);
   font-size: 13px; font-weight: 600; transition: all 0.2s;
 }
@@ -184,7 +185,7 @@
 /* ---- Enhancers ---- */
 .ai-enh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .ai-enh {
-  padding: 12px 14px; border-radius: 10px;
+  padding: 12px 14px; border-radius: 0;
   background: #10141a; border: 1px solid #232a32; transition: all 0.25s;
 }
 .ai-enh.on { border-color: rgba(53, 224, 208, 0.4); box-shadow: inset 0 0 18px rgba(53, 224, 208, 0.06); }
@@ -193,13 +194,13 @@
 .ai-enh-slider { display: flex; align-items: center; gap: 10px; }
 .ai-enh-lvl { font-family: 'Consolas', monospace; font-size: 12px; color: var(--muted); min-width: 40px; text-align: right; }
 
-/* Hardware toggle switch */
+/* Hardware toggle switch (squared) */
 .ai-switch {
-  width: 46px; height: 24px; border-radius: 13px; padding: 0; cursor: pointer;
+  width: 46px; height: 24px; border-radius: 0; padding: 0; cursor: pointer;
   background: #0a0d11; border: 1px solid #2a3038; position: relative; transition: all 0.25s;
 }
 .ai-switch .ai-switch-knob {
-  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 0;
   background: linear-gradient(180deg, #5a6673, #39424d);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6); transition: all 0.25s;
 }
@@ -210,9 +211,9 @@
 }
 
 /* Horizontal slider */
-.ai-hslider { -webkit-appearance: none; appearance: none; flex: 1; height: 5px; border-radius: 3px; background: #262d36; cursor: pointer; }
+.ai-hslider { -webkit-appearance: none; appearance: none; flex: 1; height: 5px; border-radius: 0; background: #262d36; cursor: pointer; }
 .ai-hslider::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+  -webkit-appearance: none; width: 14px; height: 16px; border-radius: 0;
   background: linear-gradient(180deg, #5fe9db, #26b4a6); border: 1px solid var(--accent);
   box-shadow: 0 0 8px rgba(53, 224, 208, 0.55);
 }
@@ -227,7 +228,7 @@
 .ai-engine-status.warn { color: #cdd6df; }
 .ai-engine-msg { font-size: 12px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
 .ai-install-btn {
-  padding: 11px 20px; border-radius: 10px; cursor: pointer; white-space: nowrap;
+  padding: 11px 20px; border-radius: 0; cursor: pointer; white-space: nowrap;
   background: linear-gradient(180deg, #47f0df, #22b6a7); color: #06231f;
   border: 1px solid var(--accent); font-weight: 700; font-size: 13px;
   box-shadow: 0 0 16px rgba(53, 224, 208, 0.4);
