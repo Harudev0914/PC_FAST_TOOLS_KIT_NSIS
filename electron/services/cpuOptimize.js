@@ -9,7 +9,9 @@
 
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+// [고도화] cleanmgr가 UI를 띄우고 멈추는 것 등을 막기 위해 기본 타임아웃(2분)·버퍼(20MB) 적용.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 
 async function optimize() {
   const results = {

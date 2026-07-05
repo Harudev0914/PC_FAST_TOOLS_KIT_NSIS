@@ -54,7 +54,25 @@ function SoundBoost() {
     loadSettings();
     loadDevices();
     loadEQPresets();
+    loadModels();
   }, []);
+
+  // 사용 가능한 오디오 처리 모델 감지 (이전엔 호출되지 않아 모델 목록이 항상 비어 있었음)
+  const loadModels = async () => {
+    if (!window.electronAPI?.audio?.detectModels) return;
+    setDetectingModels(true);
+    try {
+      const models = await window.electronAPI.audio.detectModels();
+      const list = Array.isArray(models) ? models : [];
+      setAvailableModels(list);
+      // 선택된 모델이 없으면 사용 가능한 첫 모델을 기본 선택
+      setSelectedModel((prev) => prev || list.find((m) => m.available)?.id || null);
+    } catch (error) {
+      console.error('Error detecting audio models:', error);
+    } finally {
+      setDetectingModels(false);
+    }
+  };
 
   const loadSettings = async () => {
     try {
@@ -67,7 +85,6 @@ function SoundBoost() {
         setBassLevel(settings.bassLevel || 50);
         setTrebleLevel(settings.trebleLevel || 50);
         setEqPreset(settings.eqPreset || 'normal');
-        console.log('Settings loaded from preloaded data');
         return;
       }
       
@@ -93,7 +110,6 @@ function SoundBoost() {
     try {
       if (window.__preloadedAudioDevices && window.__preloadedAudioDevices.length > 0) {
         setDevices(window.__preloadedAudioDevices);
-        console.log('Devices loaded from preloaded data:', window.__preloadedAudioDevices.length);
         return;
       }
       
@@ -111,7 +127,6 @@ function SoundBoost() {
       // 먼저 미리 로드된 EQ 프리셋 확인
       if (window.__preloadedEQPresets && window.__preloadedEQPresets.length > 0) {
         setEqPresets(window.__preloadedEQPresets);
-        console.log('EQ presets loaded from preloaded data:', window.__preloadedEQPresets.length);
         return;
       }
       

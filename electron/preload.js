@@ -135,11 +135,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     close: () => ipcRenderer.invoke('window:close'),
   },
 
-  // System Stats
-  systemStats: {
-    getAll: () => ipcRenderer.invoke('systemStats:getAll'),
-  },
-
   // Platform
   platform: {
     getOSInfo: () => ipcRenderer.invoke('platform:getOSInfo'),

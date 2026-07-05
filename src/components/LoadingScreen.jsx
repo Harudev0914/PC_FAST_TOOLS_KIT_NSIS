@@ -2,7 +2,6 @@ import React from 'react';
 import '../styles/LoadingScreen.css';
 
 function LoadingScreen() {
-  console.log('LoadingScreen rendered');
   return (
     <div className="loading-screen" style={{ backgroundColor: '#2a2a2a', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
       <div className="loading-content">

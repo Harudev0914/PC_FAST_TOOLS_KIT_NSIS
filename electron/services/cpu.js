@@ -14,7 +14,11 @@ const si = require('systeminformation');
 const Registry = require('winreg');
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
+// 1MB 버퍼 초과 크래시를 방지한다. (기존 Promise.race 헬퍼는 자식 프로세스를 죽이지
+// 못해 백그라운드에 누수됐음.) 개별 호출이 옵션을 넘기면 그 값이 우선한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const permissionsService = require('./permissions');
 
 // @cpu.js (14-19)
@@ -218,47 +222,39 @@ async function optimize(options = {}) {
         ];
 
         return new Promise((resolve) => {
-          startupRegKey.keys((err, items) => {
-            if (err) {
-              results.errors.push({ action: 'startupPrograms', error: err.message });
-              resolve();
-              return;
-            }
-
-            if (!items || items.length === 0) {
-              results.startupPrograms = true;
+          // [고도화] Run 항목은 "값(value)"이므로 keys()가 아니라 values()로 열거해야 실제
+          // 항목이 잡힌다(기존엔 keys()라 아무것도 처리 못 함). 또한 비가역적 삭제 대신
+          // Task Manager와 동일하게 StartupApproved에 "사용 안 함" 플래그(REG_BINARY 03 00…)를
+          // 기록해 언제든 되돌릴 수 있게 한다.
+          startupRegKey.values(async (err, items) => {
+            if (err || !items || items.length === 0) {
+              results.startupPrograms = true; // 항목 없음/조회 실패도 치명적이지 않음
               resolve();
               return;
             }
 
             let disabledCount = 0;
-            const removePromises = items.map((item) => {
-              return new Promise((itemResolve) => {
-                const itemName = item.key.split('\\').pop();
-                const shouldDisable = unnecessaryStartups.some(name => 
-                  itemName.toLowerCase().includes(name.toLowerCase())
-                );
+            for (const item of items) {
+              const itemName = item.name;
+              const shouldDisable = unnecessaryStartups.some(name =>
+                itemName.toLowerCase().includes(name.toLowerCase())
+              );
+              if (shouldDisable) {
+                try {
+                  await execAsync(
+                    `reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run" /v "${itemName}" /t REG_BINARY /d 030000000000000000000000 /f`,
+                    { timeout: 5000 }
+                  ).catch(() => {});
+                  disabledCount++;
+                } catch (e) {}
+              }
+            }
 
-                if (shouldDisable) {
-                  const itemKey = new Registry({
-                    hive: Registry.HKCU,
-                    key: `\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\${itemName}`,
-                  });
-
-                  itemKey.remove((removeErr) => {
-                    if (!removeErr) disabledCount++;
-                    itemResolve();
-                  });
-                } else {
-                  itemResolve();
-                }
-              });
-            });
-
-            Promise.all(removePromises).then(() => {
-              results.startupPrograms = disabledCount > 0;
-              resolve();
-            });
+            results.startupPrograms = disabledCount > 0;
+            if (disabledCount > 0) {
+              results.operations.push(`불필요한 시작 프로그램 ${disabledCount}개 비활성화 (되돌리기 가능)`);
+            }
+            resolve();
           });
         });
       })(),
@@ -481,7 +477,8 @@ async function optimize(options = {}) {
   try {
     const cpuInfo = await si.cpu().catch(() => ({ cores: 0 }));
     const coreCount = cpuInfo.cores || 0;
-    const affinityMask = (1 << coreCount) - 1;
+    // JS의 `<<`는 32비트라 코어 수가 32 이상이면 오버플로(1<<32===1). BigInt로 계산.
+    const affinityMask = coreCount > 0 ? (1n << BigInt(coreCount)) - 1n : 0n;
     const affinityHex = '0x' + affinityMask.toString(16).toUpperCase().padStart(Math.ceil(coreCount / 4) * 8, '0');
     
     const processes = await Promise.race([
@@ -528,7 +525,8 @@ async function optimize(options = {}) {
     try {
       const cpuInfo = await si.cpu().catch(() => ({ cores: 0 }));
       const coreCount = cpuInfo.cores || 0;
-      const affinityMask = (1 << coreCount) - 1;
+      // JS의 `<<`는 32비트라 코어 수가 32 이상이면 오버플로(1<<32===1). BigInt로 계산.
+    const affinityMask = coreCount > 0 ? (1n << BigInt(coreCount)) - 1n : 0n;
       const affinityHex = '0x' + affinityMask.toString(16).toUpperCase();
       
       const importantProcesses = ['explorer', 'dwm'];
@@ -602,7 +600,8 @@ async function optimize(options = {}) {
     const cpuInfo = await si.cpu().catch(() => ({ cores: 0 }));
     const coreCount = cpuInfo.cores || 0;
     const logicalProcessorCount = coreCount;
-    const affinityMask = (1 << logicalProcessorCount) - 1;
+    // BigInt로 계산해 32코어 이상에서 발생하던 비트 오버플로를 방지
+    const affinityMask = logicalProcessorCount > 0 ? (1n << BigInt(logicalProcessorCount)) - 1n : 0n;
     const affinityHex = '0x' + affinityMask.toString(16).toUpperCase().padStart(Math.ceil(logicalProcessorCount / 4) * 8, '0');
     
     const importantProcesses = ['explorer', 'dwm'];

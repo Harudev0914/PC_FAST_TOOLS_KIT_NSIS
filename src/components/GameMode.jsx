@@ -76,7 +76,7 @@ function GameMode() {
             </button>
           </div>
           <p className="toggle-description">
-            Game Mode를 활성화하면 CPU, GPU, 메모리, 네트워크 등 시스템 리소스가 게임에 최적화됩니다.
+            원클릭으로 FPS·마우스 가속·반응속도·핑을 한 번에 최적화합니다. 관리자 권한 없이 즉시 적용되며, 앱을 관리자 권한으로 실행하면 GPU 스케줄링·핑(네트워크)·게임 작업 우선순위까지 자동 적용됩니다.
           </p>
         </div>
       </div>
@@ -88,50 +88,57 @@ function GameMode() {
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">Windows Game Mode 활성화</div>
-                <div className="optimization-description">시스템 리소스를 게임에 집중시킵니다</div>
+                <div className="optimization-name">Windows 게임 모드 (FPS 향상)</div>
+                <div className="optimization-description">시스템 리소스를 게임에 집중시켜 프레임을 높입니다</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">CPU 최적화</div>
-                <div className="optimization-description">고성능 전원 계획 및 CPU 부스트 활성화</div>
+                <div className="optimization-name">Game DVR·백그라운드 녹화 비활성화</div>
+                <div className="optimization-description">숨은 녹화 오버헤드를 제거해 FPS·프레임타임 개선</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">GPU 최적화</div>
-                <div className="optimization-description">GPU 스케줄링 우선순위 향상</div>
+                <div className="optimization-name">마우스 가속 비활성화</div>
+                <div className="optimization-description">1:1 조준 일관성 확보 (재로그인 없이 즉시 적용)</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">메모리 최적화</div>
-                <div className="optimization-description">메모리 정리 및 불필요한 프로세스 종료</div>
+                <div className="optimization-name">입력·UI 반응속도 향상</div>
+                <div className="optimization-description">메뉴 표시 지연 0, 키 반복 지연 최소화</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">네트워크 최적화</div>
-                <div className="optimization-description">TCP/IP 파라미터 최적화 및 핑 지연 시간 최소화</div>
+                <div className="optimization-name">시각 효과 성능 우선 + 고성능 전원</div>
+                <div className="optimization-description">애니메이션 최소화 및 고성능 전원 계획 적용</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">오디오 최적화</div>
-                <div className="optimization-description">게임 사운드 증폭 및 오디오 향상 기능 활성화</div>
+                <div className="optimization-name">메모리 정리 + DNS 플러시</div>
+                <div className="optimization-description">백그라운드 우선순위 조정 및 응답 지연 개선</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">백그라운드 앱 최적화</div>
-                <div className="optimization-description">불필요한 백그라운드 앱 및 서비스 일시 중지</div>
+                <div className="optimization-name">핑·네트워크 지연 최소화 <span style={{ opacity: 0.6 }}>(관리자 실행 시)</span></div>
+                <div className="optimization-description">Nagle/ACK 지연 off, TCP 튜닝으로 반응속도 향상</div>
+              </div>
+            </div>
+            <div className="optimization-item">
+              <span className="optimization-icon">✓</span>
+              <div className="optimization-content">
+                <div className="optimization-name">GPU 스케줄링·게임 작업 우선순위 <span style={{ opacity: 0.6 }}>(관리자 실행 시)</span></div>
+                <div className="optimization-description">하드웨어 가속 GPU 스케줄링 및 MMCSS 우선순위 상향</div>
               </div>
             </div>
           </div>

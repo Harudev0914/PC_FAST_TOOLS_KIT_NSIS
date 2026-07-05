@@ -20,7 +20,9 @@ const os = require('os');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 
 const DEFAULT_PATH = path.join(os.homedir(), 'Delta Force', 'Game', 'DeltaForce', 'Saved', 'Logs');
 
@@ -351,118 +353,94 @@ async function optimizeWithWindowsAPI(options = {}) {
     success: true,
     operations: [],
     errors: [],
-    servicesOptimized: false,
-    processPriorityOptimized: false,
+    tempCleaned: false,
     memoryOptimized: false,
+    gameModeEnabled: false,
+    gameDVRDisabled: false,
+    visualEffectsOptimized: false,
+    dnsFlushed: false,
+    servicesOptimized: false,
     prefetchOptimized: false,
     searchOptimized: false,
-    requiresAdmin: false,
+    diskOptimized: false,
     adminGranted: false,
   };
 
+  // [변경] 관리자 권한을 "요구"하지 않는다(UAC 프롬프트 없음). 아래 1~6은 모두
+  // 사용자 권한(HKCU/사용자 TEMP)에서 동작하는 최적화이며, 이미 관리자로 실행 중인
+  // 경우에만 심화 최적화(서비스/Prefetch/Search/디스크)를 추가로 적용한다.
   const permissionsService = require('./permissions');
-  const isAdmin = await permissionsService.isAdmin();
+  const isAdmin = await permissionsService.isAdmin().catch(() => false);
   results.adminGranted = isAdmin;
 
+  // HKCU DWORD 값 설정 헬퍼: reg add로 키 생성까지 한 번에 처리(관리자 권한 불필요).
+  const setHKCU = (regPath, name, value) =>
+    execAsync(`reg add "HKCU\\${regPath}" /v ${name} /t REG_DWORD /d ${value} /f`, { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+
   try {
-    // 1. 서비스 최적화 (불필요한 서비스 비활성화)
-    if (isAdmin || options.requestAdminPermission) {
-      try {
-        const servicesToDisable = ['Fax', 'WSearch', 'SysMain']; // Windows Search, Superfetch
-        
-        for (const serviceName of servicesToDisable) {
-          try {
-            // 서비스 상태 확인
-            const { stdout } = await execAsync(`sc query "${serviceName}"`, { encoding: 'utf8' }).catch(() => ({ stdout: '' }));
-            
-            if (stdout.includes('RUNNING')) {
-              await execAsync(`sc stop "${serviceName}"`).catch(() => {});
-              await execAsync(`sc config "${serviceName}" start= disabled`).catch(() => {});
-              results.operations.push(`서비스 "${serviceName}" 비활성화 완료`);
-            }
-          } catch (error) {
-            // 서비스가 없거나 접근할 수 없는 경우 무시
-          }
-        }
-        
-        results.servicesOptimized = true;
-      } catch (error) {
-        results.errors.push({ action: 'servicesOptimization', error: error.message });
-      }
-    } else {
-      results.requiresAdmin = true;
-    }
-
-    // 2. Prefetch/Superfetch 최적화
-    if (isAdmin || options.requestAdminPermission) {
-      try {
-        const prefetchKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters',
-        });
-
-        await new Promise((resolve, reject) => {
-          prefetchKey.set('EnablePrefetcher', Registry.REG_DWORD, '0', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-
-        await new Promise((resolve, reject) => {
-          prefetchKey.set('EnableSuperfetch', Registry.REG_DWORD, '0', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-
-        results.prefetchOptimized = true;
-        results.operations.push('Prefetch/Superfetch 비활성화 완료');
-      } catch (error) {
-        results.errors.push({ action: 'prefetchOptimization', error: error.message });
-      }
-    }
-
-    // 3. Windows Search 인덱싱 최적화
-    if (isAdmin || options.requestAdminPermission) {
-      try {
-        // 레지스트리 키가 존재하는지 확인하고 없으면 생성
-        const searchPath = '\\SOFTWARE\\Microsoft\\Windows Search';
-        try {
-          await execAsync(`reg query "HKLM${searchPath.replace(/\\/g, '\\')}"`, { encoding: 'utf8' }).catch(async () => {
-            // 키가 없으면 생성
-            await execAsync(`reg add "HKLM${searchPath.replace(/\\/g, '\\')}" /f`, { encoding: 'utf8' }).catch(() => {});
-          });
-        } catch {
-          // 키 확인/생성 실패는 무시하고 계속 진행
-        }
-
-        const searchKey = new Registry({
-          hive: Registry.HKLM,
-          key: searchPath,
-        });
-
-        await new Promise((resolve, reject) => {
-          searchKey.set('SetupCompletedSuccessfully', Registry.REG_DWORD, '0', (err) => {
-            if (err) {
-              // 에러가 발생해도 계속 진행
-              console.warn('SetupCompletedSuccessfully 설정 실패:', err.message);
-            }
-            resolve();
-          });
-        });
-
-        results.searchOptimized = true;
-        results.operations.push('Windows Search 인덱싱 최적화 완료');
-      } catch (error) {
-        // 전체 에러는 기록하되, 개별 키 설정 실패는 무시
-        console.error('Search optimization error:', error);
-        results.errors.push({ action: 'searchOptimization', error: error.message || '알 수 없는 오류' });
-      }
-    }
-
-    // 4. 메모리 최적화 (프로세스 WorkingSet 최적화)
+    // 1. 임시 파일 정리 (사용자 TEMP - 관리자 권한 불필요)
     try {
-      // PowerShell을 통해 프로세스 우선순위 및 메모리 최적화
+      const tempDirs = [os.tmpdir(), path.join(process.env.LOCALAPPDATA || '', 'Temp')].filter(Boolean);
+      const seen = new Set();
+      let removed = 0;
+      for (const dir of tempDirs) {
+        const dedupKey = dir.toLowerCase();
+        if (seen.has(dedupKey)) continue;
+        seen.add(dedupKey);
+        let entries = [];
+        try { entries = await fs.readdir(dir); } catch { continue; }
+        for (const entry of entries) {
+          try {
+            await fs.rm(path.join(dir, entry), { recursive: true, force: true });
+            removed++;
+          } catch { /* 사용 중(잠긴) 파일은 건너뜀 */ }
+        }
+      }
+      results.tempCleaned = true;
+      results.operations.push(`임시 파일 정리 완료 (${removed}개 항목 제거)`);
+    } catch (error) {
+      results.errors.push({ action: 'tempCleanup', error: error.message });
+    }
+
+    // 2. 게임 모드 활성화 (HKCU - 관리자 권한 불필요)
+    try {
+      const ok1 = await setHKCU('Software\\Microsoft\\GameBar', 'AutoGameModeEnabled', 1);
+      const ok2 = await setHKCU('Software\\Microsoft\\GameBar', 'AllowAutoGameMode', 1);
+      if (ok1 || ok2) {
+        results.gameModeEnabled = true;
+        results.operations.push('게임 모드 활성화 완료');
+      }
+    } catch (error) {
+      results.errors.push({ action: 'gameMode', error: error.message });
+    }
+
+    // 3. Game DVR/백그라운드 녹화 비활성화 (HKCU - 게임 프레임 향상, 관리자 권한 불필요)
+    try {
+      const ok1 = await setHKCU('System\\GameConfigStore', 'GameDVR_Enabled', 0);
+      await setHKCU('Software\\Microsoft\\GameBar', 'UseNexusForGameBarEnabled', 0);
+      if (ok1) {
+        results.gameDVRDisabled = true;
+        results.operations.push('Game DVR 비활성화 완료 (게임 성능 향상)');
+      }
+    } catch (error) {
+      results.errors.push({ action: 'gameDVR', error: error.message });
+    }
+
+    // 4. 시각 효과 성능 우선 (HKCU - 애니메이션/그림자 최소화, 관리자 권한 불필요)
+    try {
+      const ok = await setHKCU('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects', 'VisualFXSetting', 2);
+      if (ok) {
+        results.visualEffectsOptimized = true;
+        results.operations.push('시각 효과 성능 우선 설정 완료');
+      }
+    } catch (error) {
+      results.errors.push({ action: 'visualEffects', error: error.message });
+    }
+
+    // 5. 메모리 최적화 (백그라운드 프로세스 우선순위 조정 + GC - 관리자 권한 불필요)
+    try {
       const memoryScript = `
         $processes = Get-Process | Where-Object { $_.WorkingSet -gt 100MB -and $_.PriorityClass -ne 'High' -and $_.ProcessName -ne 'svchost' }
         foreach ($proc in $processes) {
@@ -474,27 +452,63 @@ async function optimizeWithWindowsAPI(options = {}) {
         [System.GC]::WaitForPendingFinalizers()
         [System.GC]::Collect()
       `;
-      
+
       await execAsync(
         `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${memoryScript}"`,
-        { encoding: 'utf8' }
+        { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 * 4 }
       ).catch(() => {});
-      
+
       results.memoryOptimized = true;
       results.operations.push('메모리 최적화 완료 (프로세스 우선순위 조정)');
     } catch (error) {
       results.errors.push({ action: 'memoryOptimization', error: error.message });
     }
 
-    // 5. 디스크 조각 모음 권장
-    if (isAdmin || options.requestAdminPermission) {
+    // 6. DNS 캐시 플러시 (실패는 무시)
+    try {
+      await execAsync('ipconfig /flushdns', { timeout: 5000 }).catch(() => {});
+      results.dnsFlushed = true;
+      results.operations.push('DNS 캐시 플러시 완료');
+    } catch { /* 무시 */ }
+
+    // ── 이하: 이미 관리자 권한으로 실행 중일 때만 추가 적용 (UAC 요청하지 않음) ──
+    if (isAdmin) {
+      // 서비스 최적화
       try {
-        // 디스크 최적화 설정
-        await execAsync('defrag C: /O /H').catch(() => {});
-        results.operations.push('디스크 최적화 권장 완료');
+        const servicesToDisable = ['Fax', 'WSearch', 'SysMain'];
+        for (const serviceName of servicesToDisable) {
+          const { stdout } = await execAsync(`sc query "${serviceName}"`, { encoding: 'utf8', timeout: 5000 }).catch(() => ({ stdout: '' }));
+          if (stdout.includes('RUNNING')) {
+            await execAsync(`sc stop "${serviceName}"`, { timeout: 5000 }).catch(() => {});
+            await execAsync(`sc config "${serviceName}" start= disabled`, { timeout: 5000 }).catch(() => {});
+            results.operations.push(`서비스 "${serviceName}" 비활성화 완료`);
+          }
+        }
+        results.servicesOptimized = true;
       } catch (error) {
-        // 디스크 조각 모음 실패는 무시 (이미 실행 중일 수 있음)
+        results.errors.push({ action: 'servicesOptimization', error: error.message });
       }
+
+      // Prefetch/Superfetch
+      try {
+        const prefetchKey = new Registry({
+          hive: Registry.HKLM,
+          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters',
+        });
+        await new Promise((resolve) => prefetchKey.set('EnablePrefetcher', Registry.REG_DWORD, '0', () => resolve()));
+        await new Promise((resolve) => prefetchKey.set('EnableSuperfetch', Registry.REG_DWORD, '0', () => resolve()));
+        results.prefetchOptimized = true;
+        results.operations.push('Prefetch/Superfetch 최적화 완료');
+      } catch (error) {
+        results.errors.push({ action: 'prefetchOptimization', error: error.message });
+      }
+
+      // 디스크 조각 모음/TRIM
+      try {
+        await execAsync('defrag C: /O /H', { timeout: 600000, maxBuffer: 1024 * 1024 * 20 }).catch(() => {});
+        results.diskOptimized = true;
+        results.operations.push('디스크 최적화 완료');
+      } catch { /* 무시 */ }
     }
 
     if (results.errors.length > 0) {

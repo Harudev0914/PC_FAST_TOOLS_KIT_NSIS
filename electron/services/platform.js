@@ -51,19 +51,29 @@ async function getOSInfo() {
   }
 }
 
+// 권한 상태는 프로세스 수명 동안 변하지 않으므로 1회 확인 후 캐시한다.
+// (매 최적화 호출마다 net session을 새로 띄우던 부하/행 위험 제거)
+let _isAdminCache = null;
+
 async function isAdmin() {
+  if (_isAdminCache !== null) return _isAdminCache;
+
   const platform = process.platform;
   if (platform === 'win32') {
     try {
-      await execAsync('net session');
-      return true;
+      // net session은 관리자 권한이 있어야만 성공. 타임아웃으로 무한 대기 방지.
+      await execAsync('net session', { timeout: 3000 });
+      _isAdminCache = true;
     } catch (error) {
-      return false;
+      _isAdminCache = false;
     }
+    return _isAdminCache;
   } else if (platform === 'linux' || platform === 'darwin') {
-    return process.getuid && process.getuid() === 0;
+    _isAdminCache = !!(process.getuid && process.getuid() === 0);
+    return _isAdminCache;
   }
-  return false;
+  _isAdminCache = false;
+  return _isAdminCache;
 }
 
 async function requestAdmin(command, args = []) {

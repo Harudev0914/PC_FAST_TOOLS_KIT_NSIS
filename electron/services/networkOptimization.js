@@ -3,7 +3,9 @@ const { promisify } = require('util');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const Registry = require('winreg');
 const permissionsService = require('./permissions');
 
@@ -352,11 +354,11 @@ async function optimizeIOCP(options = {}) {
  * 종합 네트워크 최적화 (모든 API 통합)
  */
 async function optimizeAll(options = {}) {
-  const { 
-    enableQUIC = true,
+  const {
+    enableQUIC: enableQUICFlag = true,
     enableENet = true,
     enableIOCP = true,
-    requestAdminPermission = false 
+    requestAdminPermission = false
   } = options;
 
   const results = {
@@ -376,7 +378,7 @@ async function optimizeAll(options = {}) {
   // 병렬로 모든 최적화 실행
   const optimizations = [];
 
-  if (enableQUIC) {
+  if (enableQUICFlag) {
     optimizations.push(
       enableQUIC({ requestAdminPermission })
         .then(result => {

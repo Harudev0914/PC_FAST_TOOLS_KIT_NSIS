@@ -16,9 +16,9 @@ function WindowsBoost() {
     setApplyResult(null);
 
     try {
-      const result = await window.electronAPI.deltaForceCleaner.optimizeWithWindowsAPI({
-        requestAdminPermission: true,
-      });
+      // 관리자 권한을 요구하지 않는다(UAC 없음). 사용자 권한으로 가능한 최적화를 수행하고,
+      // 앱이 이미 관리자로 실행 중이면 백엔드가 심화 최적화까지 자동 적용한다.
+      const result = await window.electronAPI.deltaForceCleaner.optimizeWithWindowsAPI({});
       setApplyResult(result);
       if (result.success) {
         setEnabled(true);
@@ -58,7 +58,7 @@ function WindowsBoost() {
             </button>
           </div>
           <p className="toggle-description">
-            Windows Boost를 활성화하면 서비스, 메모리, Prefetch 등 시스템 리소스가 최적화됩니다.
+            관리자 권한 없이 즉시 적용 가능한 최적화를 수행합니다. (앱을 관리자 권한으로 실행하면 서비스·Prefetch·디스크 최적화까지 자동 적용)
           </p>
         </div>
       </div>
@@ -70,36 +70,43 @@ function WindowsBoost() {
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">서비스 최적화</div>
-                <div className="optimization-description">불필요한 Windows 서비스 비활성화 (Windows Search, Superfetch 등)</div>
+                <div className="optimization-name">임시 파일 정리</div>
+                <div className="optimization-description">사용자 임시 폴더의 불필요한 파일 삭제 (관리자 권한 불필요)</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">Prefetch/Superfetch 최적화</div>
-                <div className="optimization-description">시스템 부팅 및 앱 시작 속도 최적화</div>
+                <div className="optimization-name">게임 모드 활성화</div>
+                <div className="optimization-description">Windows 게임 모드로 게임 성능 우선</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">Windows Search 최적화</div>
-                <div className="optimization-description">검색 인덱싱 최적화로 시스템 리소스 절약</div>
+                <div className="optimization-name">Game DVR 비활성화</div>
+                <div className="optimization-description">백그라운드 녹화 종료로 게임 프레임 향상</div>
+              </div>
+            </div>
+            <div className="optimization-item">
+              <span className="optimization-icon">✓</span>
+              <div className="optimization-content">
+                <div className="optimization-name">시각 효과 최적화</div>
+                <div className="optimization-description">애니메이션·그림자 최소화로 성능 우선</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
                 <div className="optimization-name">메모리 최적화</div>
-                <div className="optimization-description">프로세스 우선순위 조정 및 메모리 관리</div>
+                <div className="optimization-description">백그라운드 프로세스 우선순위 조정 및 메모리 정리</div>
               </div>
             </div>
             <div className="optimization-item">
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
-                <div className="optimization-name">디스크 최적화</div>
-                <div className="optimization-description">디스크 조각 모음 권장</div>
+                <div className="optimization-name">DNS 캐시 플러시</div>
+                <div className="optimization-description">네트워크 응답 지연 개선</div>
               </div>
             </div>
           </div>

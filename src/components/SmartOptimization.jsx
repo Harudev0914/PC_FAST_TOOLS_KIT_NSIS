@@ -22,8 +22,6 @@ function SmartOptimization() {
   const [optimizeProgress, setOptimizeProgress] = useState(globalState?.optimizeProgress || { percent: 0, currentTask: '' });
   const [optimizingComponent, setOptimizingComponent] = useState(globalState?.optimizingComponent || null);
   const [optimizationCompleted, setOptimizationCompleted] = useState(globalState?.optimizationCompleted || {});
-  const [adminPermissionEnabled, setAdminPermissionEnabled] = useState(globalState?.adminPermissionEnabled || false);
-  const [isAdmin, setIsAdmin] = useState(globalState?.isAdmin || false);
   const [chartColors, setChartColors] = useState(globalState?.chartColors || {
     cpu: '#7E8087',
     memory: '#7E8087',
@@ -112,13 +110,11 @@ function SmartOptimization() {
       optimizeProgress,
       optimizingComponent,
       optimizationCompleted,
-      adminPermissionEnabled,
-      isAdmin,
       chartColors,
       historyData,
       systemStats,
     });
-  }, [selectedComponent, optimizeProgress, optimizingComponent, optimizationCompleted, adminPermissionEnabled, isAdmin, chartColors, historyData, systemStats]);
+  }, [selectedComponent, optimizeProgress, optimizingComponent, optimizationCompleted, chartColors, historyData, systemStats]);
 
   // 탭 변경 시 최적화 결과 상세 내용 초기화 (완료 여부는 유지)
   useEffect(() => {
@@ -148,66 +144,11 @@ function SmartOptimization() {
       
       if (window.electronAPI?.systemStats) {
         try {
-          // IPC 할당자 사용 시도 (zero-copy) - 한 번만 열기
-          let stats = null;
-          let useSharedMemory = false;
-          
-          // IPC Allocator 상태 캐싱 (반복 호출 방지)
-          if (!window.__ipcAllocatorOpened) {
-            try {
-              // IPC 할당자 열기 시도 (한 번만)
-              if (window.electronAPI?.ipcAllocator) {
-                const openResult = await window.electronAPI.ipcAllocator.open();
-                if (openResult.success) {
-                  window.__ipcAllocatorOpened = true;
-                }
-              }
-            } catch (openError) {
-              // 열기 실패 시 일반 IPC 사용
-              window.__ipcAllocatorOpened = false;
-            }
-          }
-          
-          // 이미 열려있으면 shared memory 사용 시도
-          if (window.__ipcAllocatorOpened && window.electronAPI?.ipcAllocator) {
-            try {
-              // systemStats.getAll() 호출 (shared memory offset 포함)
-              const statsResult = await window.electronAPI.systemStats.getAll();
-              
-              if (statsResult._useSharedMemory && statsResult._sharedMemoryOffset) {
-                // Shared memory에서 직접 읽기
-                const readResult = await window.electronAPI.ipcAllocator.read(statsResult._sharedMemoryOffset);
-                if (readResult.success) {
-                  // Buffer를 JSON으로 파싱
-                  if (Buffer.isBuffer(readResult.data)) {
-                    stats = JSON.parse(readResult.data.toString('utf8'));
-                  } else if (typeof readResult.data === 'string') {
-                    stats = JSON.parse(readResult.data);
-                  } else {
-                    stats = readResult.data;
-                  }
-                  useSharedMemory = true;
-                } else {
-                  // 읽기 실패 시 일반 IPC로 폴백
-                  window.__ipcAllocatorOpened = false;
-                }
-              }
-            } catch (sharedMemoryError) {
-              // Shared memory 접근 실패 시 일반 IPC로 폴백
-              window.__ipcAllocatorOpened = false;
-            }
-          }
-          
-          // Shared memory 실패 시 일반 IPC 사용
-          if (!stats) {
-            stats = await window.electronAPI.systemStats.getAll();
-            // _useSharedMemory, _sharedMemoryOffset 제거
-            if (stats._useSharedMemory !== undefined) {
-              delete stats._useSharedMemory;
-              delete stats._sharedMemoryOffset;
-            }
-          }
-          
+          // [최적화] Electron 표준 IPC로 직접 통계 수신.
+          // 과거 PowerShell 공유 메모리(ipcAllocator) 경로는 폴링마다 csc.exe
+          // 컴파일 프로세스를 다수 생성해 CPU 폭주/화면 멈춤을 유발했으므로 제거됨.
+          const stats = await window.electronAPI.systemStats.getAll();
+
           const diskArray = Array.isArray(stats.disk) ? stats.disk : (stats.disk ? [stats.disk] : []);
           
           setSystemStats(prev => ({
@@ -267,7 +208,8 @@ function SmartOptimization() {
 
           // 히스토리 데이터 추가 (최대 60개 유지) - 함수형 업데이트 사용
           const timestamp = Date.now();
-          const gpuData = Array.isArray(stats.gpu) ? stats.gpu[0] : stats.gpu;
+          const gpuArray = Array.isArray(stats.gpu) ? stats.gpu : (stats.gpu ? [stats.gpu] : []);
+          const gpuData = gpuArray[0];
           
           // WiFi와 이더넷의 경우 초당 속도 계산 (MB/s)
           // 이전 값과 비교하여 초당 속도 계산
@@ -312,9 +254,8 @@ function SmartOptimization() {
               'wifi-receive': [...(prevHistoryData['wifi-receive'] || []).slice(-59), { time: timestamp, value: wifiReceiveSpeed }],
               'wifi-send-total': [...(prevHistoryData['wifi-send-total'] || []).slice(-59), { time: timestamp, value: wifiSendMB }],
               'wifi-receive-total': [...(prevHistoryData['wifi-receive-total'] || []).slice(-59), { time: timestamp, value: wifiReceiveMB }],
-              // GPU 사용률 (gpu와 gpu-0 둘 다 저장)
+              // GPU 대표 키 'gpu'는 첫 번째 GPU. 개별 'gpu-N'은 아래 루프에서 기록.
               gpu: [...(prevHistoryData.gpu || []).slice(-59), { time: timestamp, value: gpuData?.usage || 0 }],
-              'gpu-0': [...(prevHistoryData['gpu-0'] || []).slice(-59), { time: timestamp, value: gpuData?.usage || 0 }],
             };
             
             // 각 디스크별 히스토리 데이터 추가
@@ -344,84 +285,39 @@ function SmartOptimization() {
               newHistoryData[diskKeyWriteSpeed] = [...((prevHistoryData[diskKeyWriteSpeed] || []).slice(-59)), { time: timestamp, value: diskWriteSpeedMB }];
             });
             
-            // GPU 세부 히스토리 데이터 추가 (gpu-0 형식으로 저장, systeminformation/nvidia-smi에서 가져올 수 있는 모든 값)
-            if (gpuData) {
-              const gpuKey = 'gpu-0'; // 항상 gpu-0으로 저장
-              
-              // 기본 GPU 사용률 (%)
-              if (gpuData.usage !== undefined && gpuData.usage !== null) {
-                newHistoryData[gpuKey] = [...((prevHistoryData[gpuKey] || []).slice(-59)), { time: timestamp, value: gpuData.usage }];
-              }
-              
-              // 메모리 사용률 (%) - nvidia-smi에서
-              if (gpuData.memoryUtilization !== undefined && gpuData.memoryUtilization !== null) {
-                newHistoryData[`${gpuKey}-MemoryUtil`] = [...((prevHistoryData[`${gpuKey}-MemoryUtil`] || []).slice(-59)), { time: timestamp, value: gpuData.memoryUtilization }];
-              }
-              
-              // 3D 사용률 (%)
-              if (gpuData.usage3D !== undefined && gpuData.usage3D !== null && gpuData.usage3D > 0) {
-                newHistoryData[`${gpuKey}-3D`] = [...((prevHistoryData[`${gpuKey}-3D`] || []).slice(-59)), { time: timestamp, value: gpuData.usage3D }];
-              }
-              
-              // Copy 사용률 (%)
-              if (gpuData.usageCopy !== undefined && gpuData.usageCopy !== null && gpuData.usageCopy > 0) {
-                newHistoryData[`${gpuKey}-Copy`] = [...((prevHistoryData[`${gpuKey}-Copy`] || []).slice(-59)), { time: timestamp, value: gpuData.usageCopy }];
-              }
-              
-              // Video Decode 사용률 (%)
-              if (gpuData.usageVideoDecode !== undefined && gpuData.usageVideoDecode !== null && gpuData.usageVideoDecode > 0) {
-                newHistoryData[`${gpuKey}-VideoDecode`] = [...((prevHistoryData[`${gpuKey}-VideoDecode`] || []).slice(-59)), { time: timestamp, value: gpuData.usageVideoDecode }];
-              }
-              
-              // Video Processing 사용률 (%)
-              if (gpuData.usageVideoProcessing !== undefined && gpuData.usageVideoProcessing !== null && gpuData.usageVideoProcessing > 0) {
-                newHistoryData[`${gpuKey}-VideoProcessing`] = [...((prevHistoryData[`${gpuKey}-VideoProcessing`] || []).slice(-59)), { time: timestamp, value: gpuData.usageVideoProcessing }];
-              }
-              
-              // Shared GPU Memory (GB 단위) - 사용량
-              if (gpuData.sharedMemoryUsed !== undefined && gpuData.sharedMemoryUsed !== null && gpuData.sharedMemoryUsed > 0) {
-                newHistoryData[`${gpuKey}-SharedMemory`] = [...((prevHistoryData[`${gpuKey}-SharedMemory`] || []).slice(-59)), { time: timestamp, value: gpuData.sharedMemoryUsed }];
+            // 각 GPU별 히스토리 데이터 추가 (gpu-0, gpu-1 ...). 값이 "정의된 유한수"이면(0 포함)
+            // 매 틱 기록해 시계열이 끊기지 않게 한다. undefined/null(해당 GPU가 제공하지 않는
+            // 지표)만 건너뛰어, 데이터 없는 차트는 정직하게 빈 그리드로 남긴다.
+            gpuArray.forEach((g, idx) => {
+              if (!g) return;
+              const gpuKey = `gpu-${idx}`;
+              const pushSeries = (suffix, value) => {
+                if (!Number.isFinite(value)) return;
+                const key = suffix ? `${gpuKey}-${suffix}` : gpuKey;
+                newHistoryData[key] = [...((prevHistoryData[key] || []).slice(-59)), { time: timestamp, value }];
+              };
+
+              pushSeries('', g.usage);                            // 기본 사용률 (%)
+              pushSeries('MemoryUtil', g.memoryUtilization);      // 메모리 사용률 (%)
+              pushSeries('3D', g.usage3D);                        // 3D (%)
+              pushSeries('Copy', g.usageCopy);                    // Copy (%)
+              pushSeries('VideoDecode', g.usageVideoDecode);      // 비디오 디코드 (%)
+              pushSeries('VideoProcessing', g.usageVideoProcessing); // 비디오 처리 (%)
+              pushSeries('VRAM', g.vramUsedPercent);              // VRAM 사용률 (%)
+              pushSeries('VRAMUsed', g.vramUsed);                 // VRAM 사용량 (MB)
+              pushSeries('Temperature', g.temperature);           // 온도 (°C)
+              pushSeries('Power', g.powerDraw);                   // 전력 (W)
+              pushSeries('GraphicsClock', g.graphicsClock);       // 그래픽 클럭 (MHz)
+              pushSeries('MemoryClock', g.memoryClock);           // 메모리 클럭 (MHz)
+
+              // 공유 GPU 메모리 (GB): 숫자 필드 우선, 없으면 문자열("x/yGB")에서 파싱
+              if (Number.isFinite(g.sharedMemoryUsed)) {
+                pushSeries('SharedMemory', g.sharedMemoryUsed);
               } else {
-                // 문자열에서 파싱 시도
-                const sharedMemMatch = (gpuData.sharedGpuMemory || '0/0GB').match(/([\d.]+)\/([\d.]+)GB/);
-                if (sharedMemMatch) {
-                  const sharedMemoryUsed = parseFloat(sharedMemMatch[1]) || 0;
-                  if (sharedMemoryUsed > 0) {
-                    newHistoryData[`${gpuKey}-SharedMemory`] = [...((prevHistoryData[`${gpuKey}-SharedMemory`] || []).slice(-59)), { time: timestamp, value: sharedMemoryUsed }];
-                  }
-                }
+                const m = (g.sharedGpuMemory || '').match(/([\d.]+)\/([\d.]+)GB/);
+                if (m) pushSeries('SharedMemory', parseFloat(m[1]) || 0);
               }
-              
-              // VRAM 사용률 (%)
-              if (gpuData.vramUsedPercent !== undefined && gpuData.vramUsedPercent !== null && gpuData.vramUsedPercent > 0) {
-                newHistoryData[`${gpuKey}-VRAM`] = [...((prevHistoryData[`${gpuKey}-VRAM`] || []).slice(-59)), { time: timestamp, value: gpuData.vramUsedPercent }];
-              }
-              
-              // VRAM 사용량 (MB 단위)
-              if (gpuData.vramUsed !== undefined && gpuData.vramUsed !== null && gpuData.vramUsed > 0) {
-                newHistoryData[`${gpuKey}-VRAMUsed`] = [...((prevHistoryData[`${gpuKey}-VRAMUsed`] || []).slice(-59)), { time: timestamp, value: gpuData.vramUsed }];
-              }
-              
-              // GPU 온도 (°C) - nvidia-smi에서
-              if (gpuData.temperature !== undefined && gpuData.temperature !== null && gpuData.temperature > 0) {
-                newHistoryData[`${gpuKey}-Temperature`] = [...((prevHistoryData[`${gpuKey}-Temperature`] || []).slice(-59)), { time: timestamp, value: gpuData.temperature }];
-              }
-              
-              // 전력 소비 (W) - nvidia-smi에서
-              if (gpuData.powerDraw !== undefined && gpuData.powerDraw !== null && gpuData.powerDraw > 0) {
-                newHistoryData[`${gpuKey}-Power`] = [...((prevHistoryData[`${gpuKey}-Power`] || []).slice(-59)), { time: timestamp, value: gpuData.powerDraw }];
-              }
-              
-              // 그래픽 클럭 (MHz) - nvidia-smi에서
-              if (gpuData.graphicsClock !== undefined && gpuData.graphicsClock !== null && gpuData.graphicsClock > 0) {
-                newHistoryData[`${gpuKey}-GraphicsClock`] = [...((prevHistoryData[`${gpuKey}-GraphicsClock`] || []).slice(-59)), { time: timestamp, value: gpuData.graphicsClock }];
-              }
-              
-              // 메모리 클럭 (MHz) - nvidia-smi에서
-              if (gpuData.memoryClock !== undefined && gpuData.memoryClock !== null && gpuData.memoryClock > 0) {
-                newHistoryData[`${gpuKey}-MemoryClock`] = [...((prevHistoryData[`${gpuKey}-MemoryClock`] || []).slice(-59)), { time: timestamp, value: gpuData.memoryClock }];
-              }
-            }
+            });
             
             return newHistoryData;
           });
@@ -436,17 +332,6 @@ function SmartOptimization() {
     }, [selectedComponent]);
 
   useEffect(() => {
-    // 관리자 권한 상태 확인 및 토글 초기화
-    const checkAdminStatus = async () => {
-      if (window.electronAPI?.permissions?.isAdmin) {
-        const adminStatus = await window.electronAPI.permissions.isAdmin();
-        setIsAdmin(adminStatus);
-        // 관리자 권한이 있으면 토글을 ON으로 설정, 없으면 OFF
-        setAdminPermissionEnabled(adminStatus);
-      }
-    };
-    checkAdminStatus();
-    
     // 초기 로드 - 백그라운드에서 즉시 시작 (UI 블로킹 방지)
     // Promise로 감싸서 비동기 처리
     Promise.resolve().then(() => {
@@ -616,11 +501,12 @@ function SmartOptimization() {
   useEffect(() => {
     if (selectedComponent !== 'gpu' && !selectedComponent.startsWith('gpu-')) return;
     
-    const gpuKey = 'gpu-0'; // 항상 gpu-0으로 처리
+    // 선택된 GPU 인덱스에 맞는 히스토리 키/데이터 사용 (gpu-0, gpu-1 ...)
+    const gpuIndex = selectedComponent.startsWith('gpu-') ? (parseInt(selectedComponent.slice(4)) || 0) : 0;
+    const gpuKey = `gpu-${gpuIndex}`;
     const color = chartColors[selectedComponent] || chartColors['gpu'] || '#7E8087';
-    // systemStats에서 직접 GPU 데이터 가져오기
     const gpuArray = Array.isArray(systemStats.gpu) ? systemStats.gpu : (systemStats.gpu ? [systemStats.gpu] : []);
-    const gpuData = gpuArray[0] || null;
+    const gpuData = gpuArray[gpuIndex] || null;
     
     // 3D Usage 차트
     const canvas3D = gpu3DCanvasRef.current;
@@ -797,8 +683,9 @@ function SmartOptimization() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // GPU 히스토리 데이터 가져오기 (gpu-0 형식)
-    const data = historyData['gpu-0'] || historyData.gpu || [];
+    // 선택된 GPU 인덱스의 사용률 히스토리
+    const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
+    const data = historyData[gpuKey] || historyData.gpu || [];
     
     // 그래프 색상
     const color = chartColors[selectedComponent] || chartColors['gpu'] || '#7E8087';
@@ -820,9 +707,10 @@ function SmartOptimization() {
     // 현재 선택된 컴포넌트의 히스토리 데이터 가져오기
     let data = historyData[selectedComponent] || [];
     
-    // GPU의 경우 gpu-0 형식으로 키가 저장되어 있을 수 있음
+    // GPU의 경우 선택된 인덱스 키 사용 (이 효과는 GPU에서 조기 반환되므로 방어적 처리)
     if (selectedComponent === 'gpu' || selectedComponent.startsWith('gpu-')) {
-      data = historyData['gpu-0'] || historyData.gpu || [];
+      const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
+      data = historyData[gpuKey] || historyData.gpu || [];
     }
     
     // 그래프 색상 (사용자가 선택한 색상)
@@ -956,9 +844,10 @@ function SmartOptimization() {
     }
     // GPU 키 처리 (gpu 또는 gpu-{index} 형식)
     if (selectedComponent === 'gpu' || selectedComponent.startsWith('gpu-')) {
-      // GPU는 항상 첫 번째 GPU (gpu-0)를 반환
+      // 선택된 GPU 인덱스의 데이터 반환 (gpu-0, gpu-1 ...)
+      const gpuIndex = selectedComponent.startsWith('gpu-') ? (parseInt(selectedComponent.slice(4)) || 0) : 0;
       const gpuArray = Array.isArray(systemStats.gpu) ? systemStats.gpu : (systemStats.gpu ? [systemStats.gpu] : []);
-      return gpuArray[0] || null;
+      return gpuArray[gpuIndex] || null;
     }
     if (selectedComponent === 'ethernet') {
       return systemStats.ethernet;
@@ -1118,9 +1007,6 @@ function SmartOptimization() {
   const handleOptimize = async () => {
     if (selectedComponent !== 'cpu' && selectedComponent !== 'memory' && !selectedComponent.startsWith('disk-') && selectedComponent !== 'ethernet' && selectedComponent !== 'wifi' && selectedComponent !== 'gpu' && !selectedComponent.startsWith('gpu-')) return;
     
-    // 토글 상태에 따라 관리자 권한이 필요한 작업 실행 여부 결정
-    const requestAdminPermission = adminPermissionEnabled;
-    
     setOptimizing(true);
     setOptimizeResult(null);
     setOptimizingComponent(selectedComponent);
@@ -1198,7 +1084,7 @@ function SmartOptimization() {
         updateProgress(60, '페이지 파일 최적화 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(80, '메모리 프리페치 최적화 중...');
-        result = await window.electronAPI.memory.optimize({ requestAdminPermission });
+        result = await window.electronAPI.memory.optimize({});
         updateProgress(100, '완료');
       } else if (selectedComponent.startsWith('disk-') && window.electronAPI?.disk) {
         const diskLetter = getCurrentStat()?.letter || 'C:';
@@ -1216,7 +1102,7 @@ function SmartOptimization() {
         updateProgress(50, '휴지통 비우는 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(70, '디스크 최적화 중...');
-        result = await window.electronAPI.disk.optimize({ requestAdminPermission, diskLetter });
+        result = await window.electronAPI.disk.optimize({ diskLetter });
         updateProgress(100, '완료');
       } else if (selectedComponent === 'ethernet' && window.electronAPI?.network) {
         const updateProgress = (percent, task) => {
@@ -1233,7 +1119,7 @@ function SmartOptimization() {
         updateProgress(50, 'QoS 패킷 스케줄러 최적화 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(70, '이더넷 전원 관리 최적화 중...');
-        result = await window.electronAPI.network.optimize({ adapterType: 'ethernet', requestAdminPermission });
+        result = await window.electronAPI.network.optimize({ adapterType: 'ethernet' });
         updateProgress(100, '완료');
       } else if (selectedComponent === 'wifi' && window.electronAPI?.network) {
         const updateProgress = (percent, task) => {
@@ -1250,9 +1136,11 @@ function SmartOptimization() {
         updateProgress(50, 'WiFi 전원 관리 최적화 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(70, 'WiFi 어댑터 우선순위 조정 중...');
-        result = await window.electronAPI.network.optimize({ adapterType: 'wifi', requestAdminPermission });
+        result = await window.electronAPI.network.optimize({ adapterType: 'wifi' });
         updateProgress(100, '완료');
-      } else if (selectedComponent.startsWith('gpu-') && window.electronAPI?.gpu) {
+      } else if ((selectedComponent === 'gpu' || selectedComponent.startsWith('gpu-')) && window.electronAPI?.gpu) {
+        // GPU 0 / GPU 1 등 선택한 GPU 인덱스를 전달하여 각각 독립적으로 최적화
+        const gpuIndex = parseInt(selectedComponent.replace('gpu-', '')) || 0;
         const updateProgress = (percent, task) => {
           setOptimizeProgress({ percent, currentTask: task });
           if (window.__globalOptimizationProgress) {
@@ -1260,14 +1148,14 @@ function SmartOptimization() {
             window.__globalOptimizationProgress.currentTask = task;
           }
         };
-        updateProgress(10, 'GPU 타입 감지 중...');
+        updateProgress(10, `GPU ${gpuIndex} 타입 감지 중...`);
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(30, 'GPU 전원 관리 최적화 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(50, 'GPU 스케줄링 최적화 중...');
         await new Promise(resolve => setTimeout(resolve, 300));
         updateProgress(70, 'DirectX 최적화 중...');
-        result = await window.electronAPI.gpu.optimize({ requestAdminPermission });
+        result = await window.electronAPI.gpu.optimize({ gpuIndex });
         updateProgress(100, '완료');
       }
       
@@ -1338,6 +1226,48 @@ function SmartOptimization() {
     }
   };
 
+  // 사용 중이지 않은 구성요소는 숨김 처리
+  // (미연결 이더넷/WiFi, 미존재/미인식 GPU, 용량 0 디스크). CPU/메모리는 항상 표시.
+  const isComponentInUse = (key) => {
+    if (key === 'cpu' || key === 'memory') return true;
+
+    if (key.startsWith('disk-')) {
+      const letter = key.replace('disk-', '');
+      const diskArray = Array.isArray(systemStats.disk) ? systemStats.disk : (systemStats.disk ? [systemStats.disk] : []);
+      const disk = diskArray.find(d => d.letter === letter);
+      return !!disk && (disk.total || 0) > 0;
+    }
+
+    if (key === 'ethernet' || key === 'wifi') {
+      const s = systemStats[key] || {};
+      const hasTraffic = ((s.sendMB || 0) + (s.receiveMB || 0)) > 0;
+      const hasIp = isValidValue(s.ipv4) && s.ipv4 !== '0.0.0.0';
+      const hasAdapter = isValidValue(s.adapterName);
+      const hasSsid = key === 'wifi' && isValidValue(s.ssid);
+      return hasTraffic || hasIp || hasAdapter || hasSsid;
+    }
+
+    if (key === 'gpu' || key.startsWith('gpu-')) {
+      const idx = parseInt(key.replace('gpu-', '')) || 0;
+      const gpuArray = Array.isArray(systemStats.gpu) ? systemStats.gpu : (systemStats.gpu ? [systemStats.gpu] : []);
+      const gpu = gpuArray[idx];
+      return !!gpu && isValidValue(gpu.model) && gpu.model !== 'Unknown GPU';
+    }
+
+    return true;
+  };
+
+  const visibleComponents = components.filter((c) => isComponentInUse(c.key));
+  const visibleKeys = visibleComponents.map((c) => c.key).join(',');
+
+  // 선택된 구성요소가 숨겨지면 첫 번째 표시 구성요소로 자동 전환
+  useEffect(() => {
+    if (visibleComponents.length > 0 && !visibleComponents.some((c) => c.key === selectedComponent)) {
+      setSelectedComponent(visibleComponents[0].key);
+    }
+    // visibleKeys(문자열)를 안정적 의존성으로 사용
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleKeys, selectedComponent]);
 
   return (
     <div className="smart-optimization">
@@ -1346,7 +1276,7 @@ function SmartOptimization() {
         {/* Left Sidebar - Component List */}
         <div className="component-sidebar">
           <div className="component-list">
-            {components.map((comp) => {
+            {visibleComponents.map((comp) => {
               const display = getComponentDisplay(comp.key);
               const isActive = selectedComponent === comp.key;
               const isOptimizing = optimizingComponent === comp.key;
@@ -1442,37 +1372,6 @@ function SmartOptimization() {
                   >
                     {optimizing ? '최적화 중...' : '최적화 실행'}
                   </button>
-                  {/* CPU, Memory, Disk 모두 관리자 권한 토글 표시 */}
-                  <div className="admin-toggle-container">
-                    <span className="admin-toggle-label">관리자 권한</span>
-                    <label className="admin-toggle">
-                      <input
-                        type="checkbox"
-                        checked={adminPermissionEnabled}
-                        onChange={async (e) => {
-                          const enabled = e.target.checked;
-                          
-                          if (enabled) {
-                            // 토글을 켤 때 - 관리자 권한 상태 확인
-                            const adminStatus = await window.electronAPI?.permissions?.isAdmin();
-                            setIsAdmin(adminStatus || false);
-                            setAdminPermissionEnabled(adminStatus || false);
-                            
-                            if (!adminStatus) {
-                              // 관리자 권한이 없으면 안내 메시지
-                              alert('관리자 권한이 없습니다. 관리자 권한이 필요한 작업은 별도로 실행됩니다.');
-                            }
-                          } else {
-                            // 토글을 끌 때 - 자유롭게 OFF 가능
-                            setAdminPermissionEnabled(false);
-                          }
-                        }}
-                      />
-                      <span className="admin-toggle-slider">
-                        <span className="admin-toggle-slider-button"></span>
-                      </span>
-                    </label>
-                  </div>
                   {/* CPU, Memory, Disk만 차트 색상 선택기 표시 */}
                   <ColorPicker
                     color={chartColors[selectedComponent] || '#7E8087'}
@@ -1859,7 +1758,7 @@ function SmartOptimization() {
                         <span className="chart-label">메모리 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const memData = historyData[`${gpuKey}-MemoryUtil`] || [];
                             const maxDataValue = memData.length > 0 ? Math.max(...memData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1881,7 +1780,7 @@ function SmartOptimization() {
                         <span className="chart-label">3D 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const data3D = historyData[`${gpuKey}-3D`] || [];
                             const maxDataValue = data3D.length > 0 ? Math.max(...data3D.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1903,7 +1802,7 @@ function SmartOptimization() {
                         <span className="chart-label">Copy 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const copyData = historyData[`${gpuKey}-Copy`] || [];
                             const maxDataValue = copyData.length > 0 ? Math.max(...copyData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1925,7 +1824,7 @@ function SmartOptimization() {
                         <span className="chart-label">비디오 디코드 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const decodeData = historyData[`${gpuKey}-VideoDecode`] || [];
                             const maxDataValue = decodeData.length > 0 ? Math.max(...decodeData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1947,7 +1846,7 @@ function SmartOptimization() {
                         <span className="chart-label">비디오 처리 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const processingData = historyData[`${gpuKey}-VideoProcessing`] || [];
                             const maxDataValue = processingData.length > 0 ? Math.max(...processingData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1969,7 +1868,7 @@ function SmartOptimization() {
                         <span className="chart-label">VRAM 사용률</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const vramData = historyData[`${gpuKey}-VRAM`] || [];
                             const maxDataValue = vramData.length > 0 ? Math.max(...vramData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -1991,10 +1890,11 @@ function SmartOptimization() {
                         <span className="chart-label">공유 GPU 메모리</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const sharedData = historyData[`${gpuKey}-SharedMemory`] || [];
                             const gpuArray = Array.isArray(systemStats.gpu) ? systemStats.gpu : (systemStats.gpu ? [systemStats.gpu] : []);
-                            const gpuData = gpuArray[0] || null;
+                            const gpuIndex = selectedComponent.startsWith('gpu-') ? (parseInt(selectedComponent.slice(4)) || 0) : 0;
+                            const gpuData = gpuArray[gpuIndex] || null;
                             const sharedMemoryTotal = gpuData?.sharedMemoryTotal || parseFloat((gpuData?.sharedGpuMemory || '0/0GB').split('/')[1]?.replace('GB', '') || '0') || 1;
                             const maxDataValue = sharedData.length > 0 ? Math.max(...sharedData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(sharedMemoryTotal, Math.ceil(maxDataValue * 1.2));
@@ -2016,7 +1916,7 @@ function SmartOptimization() {
                         <span className="chart-label">GPU 온도</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const tempData = historyData[`${gpuKey}-Temperature`] || [];
                             const maxDataValue = tempData.length > 0 ? Math.max(...tempData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -2038,7 +1938,7 @@ function SmartOptimization() {
                         <span className="chart-label">전력 소비</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const powerData = historyData[`${gpuKey}-Power`] || [];
                             const maxDataValue = powerData.length > 0 ? Math.max(...powerData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
@@ -2060,7 +1960,7 @@ function SmartOptimization() {
                         <span className="chart-label">그래픽 클럭</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const clockData = historyData[`${gpuKey}-GraphicsClock`] || [];
                             const maxDataValue = clockData.length > 0 ? Math.max(...clockData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(1000, Math.ceil(maxDataValue * 1.1));
@@ -2082,7 +1982,7 @@ function SmartOptimization() {
                         <span className="chart-label">메모리 클럭</span>
                         <span className="chart-max-value">
                           {(() => {
-                            const gpuKey = 'gpu-0';
+                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
                             const memClockData = historyData[`${gpuKey}-MemoryClock`] || [];
                             const clockData = historyData[`${gpuKey}-MemoryClock`] || [];
                             const maxDataValue = clockData.length > 0 ? Math.max(...clockData.map(d => d.value || 0)) : 0;

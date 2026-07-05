@@ -9,7 +9,6 @@ if (!rootElement) {
   console.error('Root element not found!');
   document.body.innerHTML = '<div style="padding: 40px; color: red; font-family: Arial; background: #1a1a1a; min-height: 100vh; display: flex; align-items: center; justify-content: center;">오류: root 요소를 찾을 수 없습니다!</div>';
 } else {
-  console.log('Root element found, rendering App...');
   try {
     const root = ReactDOM.createRoot(rootElement);
     root.render(
@@ -17,7 +16,6 @@ if (!rootElement) {
         <App />
       </React.StrictMode>
     );
-    console.log('App rendered successfully!');
   } catch (error) {
     console.error('Error rendering App:', error);
     rootElement.innerHTML = `

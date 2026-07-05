@@ -13,7 +13,9 @@
 
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const fs = require('fs').promises;
 const platformService = require('./platform');
 
@@ -106,7 +108,7 @@ async function getGPUUsageByType(engType) {
 
 async function getSharedGPUMemory() {
   try {
-    const { stdout } = await execAsync('wmic path win32_VideoController get AdapterRAM,SharedSystemMemory /format:list', { encoding: 'utf8' });
+    const { stdout } = await execAsync('wmic path win32_VideoController get AdapterRAM,SharedSystemMemory /format:list', { encoding: 'utf8', timeout: 5000 });
     
     let adapterRAM = 0;
     let sharedSystemMemory = 0;
@@ -123,7 +125,7 @@ async function getSharedGPUMemory() {
     
     let sharedMemoryUsed = 0;
     try {
-      const { stdout: memStdout } = await execAsync('typeperf "\\GPU Process Memory(*)\\Shared Usage" -sc 1 -si 1', { encoding: 'utf8' });
+      const { stdout: memStdout } = await execAsync('typeperf "\\GPU Process Memory(*)\\Shared Usage" -sc 1 -si 1', { encoding: 'utf8', timeout: 5000 });
       const memLines = memStdout.split('\n').filter(l => l.trim() && l.includes(',') && !l.includes('"\\'));
       if (memLines.length > 1) {
         const lastLine = memLines[memLines.length - 1];
@@ -148,13 +150,13 @@ async function getSharedGPUMemory() {
 
 async function getDirectXVersion() {
   try {
-    const { stdout } = await execAsync('reg query "HKLM\\SOFTWARE\\Microsoft\\DirectX" /v Version');
+    const { stdout } = await execAsync('reg query "HKLM\\SOFTWARE\\Microsoft\\DirectX" /v Version', { timeout: 5000 });
     const match = stdout.match(/Version\s+REG_SZ\s+(\d+\.\d+)/);
     if (match) {
       return match[1];
     }
     
-    const { stdout: wmiStdout } = await execAsync('wmic path win32_VideoController get DriverVersion /format:list');
+    const { stdout: wmiStdout } = await execAsync('wmic path win32_VideoController get DriverVersion /format:list', { timeout: 5000 });
     return '12 (FL 12.1)';
   } catch (error) {
     return 'Unknown';
@@ -163,7 +165,7 @@ async function getDirectXVersion() {
 
 async function getPhysicalLocation() {
   try {
-    const { stdout } = await execAsync('wmic path win32_VideoController get PNPDeviceID /format:list');
+    const { stdout } = await execAsync('wmic path win32_VideoController get PNPDeviceID /format:list', { timeout: 5000 });
     const lines = stdout.split('\n');
     for (const line of lines) {
       if (line.includes('PNPDeviceID=')) {

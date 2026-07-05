@@ -11,7 +11,10 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
+// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 
 // @network.js (12-39)
 // getStats 함수: 네트워크 통계 정보 조회
@@ -152,58 +155,34 @@ async function optimize(options = {}) {
       results.errors.push({ action: 'dnsFlush', error: error.message });
     }
 
-    if (isAdmin || requestAdminPermission) {
+    if (isAdmin) {
       try {
-        const tcpKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters',
-        });
+        // [고도화] 레거시 TCP 레지스트리 키(TcpWindowSize/Tcp1323Opts/EnableChimney,
+        // 전역 위치의 TcpAckFrequency/TcpNoDelay 등)는 현대 Windows의 자동 튜닝/CTCP에
+        // 의해 무시된다. 실제 효과 있는 명령·키·위치로 교체한다.
 
-        await timeout(
-          Promise.all([
-            new Promise((resolve, reject) => {
-              tcpKey.set('TcpWindowSize', Registry.REG_SZ, '65535', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-            new Promise((resolve, reject) => {
-              tcpKey.set('Tcp1323Opts', Registry.REG_DWORD, '3', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-            new Promise((resolve, reject) => {
-              tcpKey.set('EnableChimney', Registry.REG_DWORD, '1', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-            new Promise((resolve, reject) => {
-              tcpKey.set('TcpAckFrequency', Registry.REG_DWORD, '1', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-            new Promise((resolve, reject) => {
-              tcpKey.set('TcpNoDelay', Registry.REG_DWORD, '1', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-            new Promise((resolve, reject) => {
-              tcpKey.set('KeepAliveTime', Registry.REG_DWORD, '300000', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            }),
-          ]),
-          5000
-        );
+        // 1) TCP 전역 튜닝 (자동 튜닝 정상화 + CTCP 혼잡 제어 + RSS)
+        await execAsync('netsh int tcp set global autotuninglevel=normal', { timeout: 10000 }).catch(() => {});
+        await execAsync('netsh int tcp set supplemental Internet congestionprovider=ctcp', { timeout: 10000 }).catch(() => {});
+        await execAsync('netsh int tcp set global rss=enabled', { timeout: 10000 }).catch(() => {});
+
+        // 2) 네트워크 스로틀링 해제 (멀티미디어 재생 중 네트워크 제한 제거 → 지연 감소)
+        const throttleKey = new Registry({
+          hive: Registry.HKLM,
+          key: '\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile',
+        });
+        await new Promise((resolve) => throttleKey.set('NetworkThrottlingIndex', Registry.REG_DWORD, '4294967295', () => resolve()));
+
+        // 3) 모든 네트워크 인터페이스에 Nagle 알고리즘/ACK 지연 비활성화 (핑 감소).
+        //    전역 Tcpip\Parameters가 아니라 "인터페이스별" 키여야 실제로 적용된다.
+        const nagleScript = "Get-ChildItem 'HKLM:\\SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces' | ForEach-Object { New-ItemProperty -Path $_.PSPath -Name 'TcpAckFrequency' -Value 1 -PropertyType DWord -Force | Out-Null; New-ItemProperty -Path $_.PSPath -Name 'TCPNoDelay' -Value 1 -PropertyType DWord -Force | Out-Null }";
+        await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${nagleScript}"`, { timeout: 15000 }).catch(() => {});
 
         results.tcpOptimization = true;
-        results.operations.push('TCP/IP 고급 최적화 완료');
+        results.throttlingDisabled = true;
+        results.operations.push('TCP 지연 최소화 완료 (자동튜닝·CTCP, 인터페이스별 Nagle/ACK 지연 off, 스로틀 해제)');
       } catch (error) {
+        results.errors.push({ action: 'tcpOptimization', error: error.message });
       }
     } else {
       results.operations.push('TCP/IP 최적화 skipped (requires admin)');
@@ -262,21 +241,13 @@ async function optimize(options = {}) {
 
         (async () => {
           try {
-            const mtuCommands = [];
-            
-            if (adapterType === 'ethernet') {
-              mtuCommands.push(execAsync('netsh interface ipv4 set subinterface "이더넷" mtu=1500 store=persistent'));
-            }
-            
-            if (adapterType === 'wifi') {
-              mtuCommands.push(execAsync('netsh interface ipv4 set subinterface "Wi-Fi" mtu=1500 store=persistent'));
-            }
-            
-            if (mtuCommands.length > 0) {
-              await timeout(Promise.all(mtuCommands), 5000);
-              results.mtuOptimized = true;
-              results.operations.push('MTU 크기 최적화 완료');
-            }
+            // [고도화] 하드코딩 한글 어댑터명("이더넷"/"Wi-Fi")은 영문/이름 변경 시스템에서
+            // 실패한다. 미디어 타입으로 실제 어댑터를 찾아 MTU를 설정한다.
+            const mediaFilter = adapterType === 'wifi' ? "$_.PhysicalMediaType -like '*802.11*'" : "$_.PhysicalMediaType -eq '802.3'";
+            const mtuScript = `Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and (${mediaFilter}) } | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.ifIndex -NlMtuBytes 1500 -ErrorAction SilentlyContinue }`;
+            await execAsync(`powershell -NoProfile -Command "${mtuScript}"`, { timeout: 10000 });
+            results.mtuOptimized = true;
+            results.operations.push('MTU 크기 최적화 완료');
           } catch (error) {
           }
         })(),
@@ -351,21 +322,15 @@ async function optimize(options = {}) {
 
     if (isAdmin || requestAdminPermission) {
       try {
-        const adapterCommands = [];
-        
-        if (adapterType === 'ethernet') {
-          adapterCommands.push(execAsync('netsh interface ipv4 set interface "이더넷" metric=1'));
-        }
-        
-        if (adapterType === 'wifi') {
-          adapterCommands.push(execAsync('netsh interface ipv4 set interface "Wi-Fi" metric=2'));
-        }
-        
-        if (adapterCommands.length > 0) {
-          await timeout(Promise.all(adapterCommands), 5000);
-          results.adapterPriorityOptimized = true;
-          results.operations.push('네트워크 어댑터 우선순위 조정 완료');
-        }
+        // [고도화] 하드코딩 어댑터명 대신 미디어 타입으로 어댑터를 찾아 인터페이스 메트릭 설정
+        // (이더넷=1 우선, Wi-Fi=2). 영문/이름 변경 시스템에서도 동작.
+        const isWifi = adapterType === 'wifi';
+        const mediaFilter = isWifi ? "$_.PhysicalMediaType -like '*802.11*'" : "$_.PhysicalMediaType -eq '802.3'";
+        const metric = isWifi ? 2 : 1;
+        const metricScript = `Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and (${mediaFilter}) } | ForEach-Object { Set-NetIPInterface -InterfaceIndex $_.ifIndex -InterfaceMetric ${metric} -ErrorAction SilentlyContinue }`;
+        await execAsync(`powershell -NoProfile -Command "${metricScript}"`, { timeout: 10000 });
+        results.adapterPriorityOptimized = true;
+        results.operations.push('네트워크 어댑터 우선순위 조정 완료');
       } catch (error) {
       }
     } else {

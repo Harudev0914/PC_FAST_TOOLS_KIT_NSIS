@@ -16,7 +16,32 @@ const gpuUsageService = require('./gpuUsage');
 const gpuDetailsService = require('./gpuDetails');
 const { exec } = require('child_process');
 const { promisify } = require('util');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+
+// [최적화] si.graphics()는 GPU/디스플레이 "하드웨어" 정보를 반환하며 Windows에서
+// 내부적으로 wmic/PowerShell을 호출해 매우 느리다(수백 ms~1s). 하드웨어 구성은
+// 세션 중 사실상 변하지 않으므로 결과를 캐시하여 2초 폴링마다 재조회하지 않는다.
+// 동적 값(usage·온도·전력·클럭·메모리 사용량)은 아래 nvidia-smi/typeperf 등에서
+// 매 호출마다 새로 읽으므로 캐시해도 실시간성이 유지된다.
+let _graphicsCache = null;
+let _graphicsCacheTime = 0;
+const GRAPHICS_CACHE_TTL = 60 * 1000; // 60초
+
+async function getGraphicsCached() {
+  const now = Date.now();
+  if (_graphicsCache && (now - _graphicsCacheTime) < GRAPHICS_CACHE_TTL) {
+    return _graphicsCache;
+  }
+  const graphics = await si.graphics().catch(() => null);
+  // 유효한 결과만 캐시 (실패 시 다음 호출에서 재시도)
+  if (graphics && graphics.controllers && graphics.controllers.length > 0) {
+    _graphicsCache = graphics;
+    _graphicsCacheTime = now;
+  }
+  return graphics;
+}
 
 async function getGPUMemoryFromWMI(gpuIndex = 0) {
   try {
@@ -70,7 +95,7 @@ async function getGPUMemoryFromWMI(gpuIndex = 0) {
 
 async function getDetailedGPUInfo() {
   try {
-    const graphics = await si.graphics().catch(() => null);
+    const graphics = await getGraphicsCached();
     
     if (!graphics || !graphics.controllers || graphics.controllers.length === 0) {
       return [{
@@ -87,6 +112,26 @@ async function getDetailedGPUInfo() {
     }
 
     const gpus = [];
+
+    // [최적화] nvidia-smi를 컨트롤러마다 실행하지 않고 폴링당 1회만 실행(타임아웃 포함).
+    // nvidia-smi는 NVIDIA GPU만, 그것도 NVIDIA 내부 인덱스로 나열하므로 전체 컨트롤러
+    // 인덱스(i)와 다르다. 아래 루프에서 NVIDIA 컨트롤러를 만날 때 커서로 순서 매칭한다.
+    // (기존 코드는 lines[i]로 잘못 매칭해 하이브리드 GPU 시스템에서 수치가 뒤섞였다.)
+    let nvidiaLines = null;
+    if (process.platform === 'win32') {
+      try {
+        const { stdout } = await execAsync(
+          'nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,driver_version,temperature.gpu,power.draw,clocks.current.graphics,clocks.current.memory --format=csv,noheader,nounits 2>nul',
+          { timeout: 5000 }
+        );
+        if (stdout && stdout.trim()) {
+          nvidiaLines = stdout.trim().split('\n').filter(l => l.trim());
+        }
+      } catch (e) {
+        nvidiaLines = null; // nvidia-smi 부재 → Intel/AMD 폴백 사용
+      }
+    }
+    let nvidiaCursor = 0;
 
     for (let i = 0; i < graphics.controllers.length; i++) {
       const controller = graphics.controllers[i];
@@ -123,44 +168,41 @@ async function getDetailedGPUInfo() {
 
       if (process.platform === 'win32') {
         try {
-          const { exec } = require('child_process');
-          const { promisify } = require('util');
-          const execAsync = promisify(exec);
-          
-          try {
-            const { stdout } = await execAsync(
-              'nvidia-smi --query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,driver_version,temperature.gpu,power.draw,clocks.current.graphics,clocks.current.memory --format=csv,noheader,nounits 2>nul'
-            );
-            
-            if (stdout && stdout.trim()) {
-              const lines = stdout.trim().split('\n').filter(l => l.trim());
-              if (lines[i]) {
-                const parts = lines[i].split(',').map(p => p.trim());
-                if (parts.length >= 9) {
-                  gpu.usage = parseInt(parts[0] || 0);
-                  gpu.memoryUtilization = parseInt(parts[1] || 0);
-                  const memUsed = parseFloat(parts[2] || 0);
-                  const memTotal = parseFloat(parts[3] || 0);
-                  gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
-                  gpu.driverVersion = parts[4] || 'Unknown';
-                  gpu.temperature = parseFloat(parts[5] || 0);
-                  gpu.powerDraw = parseFloat(parts[6] || 0);
-                  gpu.graphicsClock = parseInt(parts[7] || 0);
-                  gpu.memoryClock = parseInt(parts[8] || 0);
-                  gpu.vramUsed = memUsed;
-                  gpu.vramUsedPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
-                } else if (parts.length >= 4) {
-                  gpu.usage = parseInt(parts[0] || 0);
-                  const memUsed = parseFloat(parts[1] || 0);
-                  const memTotal = parseFloat(parts[2] || 0);
-                  gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
-                  gpu.driverVersion = parts[3] || 'Unknown';
-                  gpu.vramUsed = memUsed;
-                  gpu.vramUsedPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
-                }
-              }
+          // NVIDIA 컨트롤러면 사전 조회한 nvidia-smi 결과에서 커서 순서로 매칭한다.
+          const isNvidia = /nvidia/i.test(`${controller.vendor || ''} ${controller.model || ''}`);
+          let matched = false;
+
+          if (isNvidia && nvidiaLines && nvidiaLines[nvidiaCursor]) {
+            const parts = nvidiaLines[nvidiaCursor].split(',').map(p => p.trim());
+            nvidiaCursor++;
+            if (parts.length >= 9) {
+              gpu.usage = parseInt(parts[0] || 0);
+              gpu.memoryUtilization = parseInt(parts[1] || 0);
+              const memUsed = parseFloat(parts[2] || 0);
+              const memTotal = parseFloat(parts[3] || 0);
+              gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
+              gpu.driverVersion = parts[4] || 'Unknown';
+              gpu.temperature = parseFloat(parts[5] || 0);
+              gpu.powerDraw = parseFloat(parts[6] || 0);
+              gpu.graphicsClock = parseInt(parts[7] || 0);
+              gpu.memoryClock = parseInt(parts[8] || 0);
+              gpu.vramUsed = memUsed;
+              gpu.vramUsedPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
+              matched = true;
+            } else if (parts.length >= 4) {
+              gpu.usage = parseInt(parts[0] || 0);
+              const memUsed = parseFloat(parts[1] || 0);
+              const memTotal = parseFloat(parts[2] || 0);
+              gpu.gpuMemory = `${Math.round(memUsed)}/${Math.round(memTotal)}MB`;
+              gpu.driverVersion = parts[3] || 'Unknown';
+              gpu.vramUsed = memUsed;
+              gpu.vramUsedPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
+              matched = true;
             }
-          } catch (nvidiaError) {
+          }
+
+          // NVIDIA로 매칭되지 않은 경우(Intel/AMD, 또는 nvidia-smi 부재) 폴백 경로 사용
+          if (!matched) {
             try {
               const [usage, details, gpuMemoryInfo] = await Promise.all([
                 gpuUsageService.getIntelGPUUsage().catch(() => 0),
@@ -168,11 +210,17 @@ async function getDetailedGPUInfo() {
                 getGPUMemoryFromWMI(i).catch(() => null),
               ]);
 
-              if (usage > 0) {
-                gpu.usage = Math.round(usage);
-              } else if (details && details.usage3D > 0) {
-                gpu.usage = Math.round(details.usage3D);
-              }
+              // 전체 GPU 사용률 = 엔진별(3D/Copy/영상 디코드·처리) 사용률과 벤더 사용률 중 최댓값.
+              // (특정 엔진만 바쁠 때 3D만 보면 0으로 나와 "사용률 미표시"처럼 보이던 문제 수정)
+              const engineMax = details
+                ? Math.max(
+                    details.usage3D || 0,
+                    details.usageCopy || 0,
+                    details.usageVideoDecode || 0,
+                    details.usageVideoProcessing || 0,
+                  )
+                : 0;
+              gpu.usage = Math.round(Math.min(100, Math.max(usage || 0, engineMax)));
 
               if (details) {
                 gpu.usage3D = details.usage3D;

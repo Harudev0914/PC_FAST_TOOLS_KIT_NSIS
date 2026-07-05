@@ -6,11 +6,11 @@
   "author": "KR_Tuki",
   "homepage": "./",
   "scripts": {
-    "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "start": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && node electron/launch.cjs\"",
     "dev": "vite",
     "build": "vite build",
-    "electron": "electron .",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron": "node electron/launch.cjs",
+    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && node electron/launch.cjs\"",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
     "pack": "npm run build && electron-builder --dir"

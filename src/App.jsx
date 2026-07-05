@@ -18,46 +18,38 @@ function App() {
     let timeoutId = null;
     let isMounted = true;
     
-    console.log('App useEffect started, checking electronAPI...');
-    
     const checkAPI = async () => {
       if (!isMounted) return;
-      
+
       if (window.electronAPI) {
-        console.log('electronAPI is ready');
         setApiReady(true);
-        
+
         try {
           if (window.electronAPI.audio?.getDevices) {
             const devices = await window.electronAPI.audio.getDevices();
             window.__preloadedAudioDevices = devices || [];
-            console.log('Audio devices preloaded:', window.__preloadedAudioDevices);
           }
-          
+
           if (window.electronAPI.audio?.getEQPresets) {
             const presets = await window.electronAPI.audio.getEQPresets();
             window.__preloadedEQPresets = presets || [];
-            console.log('EQ presets preloaded:', window.__preloadedEQPresets);
           }
-          
+
           if (window.electronAPI.audio?.getSettings) {
             const settings = await window.electronAPI.audio.getSettings();
             window.__preloadedAudioSettings = settings || null;
-            console.log('Audio settings preloaded:', window.__preloadedAudioSettings);
           }
         } catch (error) {
           console.error('Error preloading audio data:', error);
         }
-        
+
         timeoutId = setTimeout(() => {
           if (isMounted) {
-            console.log('Setting showLoading to false');
             setShowLoading(false);
           }
         }, 1500);
       } else {
         retries++;
-        console.log(`electronAPI check retry ${retries}/${maxRetries}`);
         if (retries < maxRetries) {
           setTimeout(checkAPI, 100);
         } else {

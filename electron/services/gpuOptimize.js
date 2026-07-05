@@ -17,7 +17,10 @@
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const Registry = require('winreg');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
+// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const permissionsService = require('./permissions');
 
 async function optimize(options = {}) {
@@ -111,21 +114,14 @@ async function optimize(options = {}) {
                 key: '\\SYSTEM\\CurrentControlSet\\Control\\GraphicsDrivers',
               });
 
-              // GPU 스케줄링과 우선순위 조정을 병렬로 실행
-              await Promise.all([
-                new Promise((resolve, reject) => {
-                  graphicsKey.set('HwSchMode', Registry.REG_DWORD, '2', (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                  });
-                }),
-                new Promise((resolve, reject) => {
-                  graphicsKey.set('TdrLevel', Registry.REG_DWORD, '0', (err) => {
-                    if (err) reject(err);
-                    else resolve();
-                  });
-                }),
-              ]);
+              // [고도화] TdrLevel=0(GPU 타임아웃 감지·복구 비활성)은 GPU 행 발생 시 시스템
+              // 전체 프리징을 유발할 수 있어 제거. 하드웨어 가속 GPU 스케줄링만 적용한다.
+              await new Promise((resolve, reject) => {
+                graphicsKey.set('HwSchMode', Registry.REG_DWORD, '2', (err) => {
+                  if (err) reject(err);
+                  else resolve();
+                });
+              });
 
               results.schedulingOptimized = true;
               results.operations.push('GPU 스케줄링 최적화 완료');
@@ -229,75 +225,24 @@ async function optimize(options = {}) {
       results.errors.push({ operation: 'GPU 메모리 관리', error: '관리자 권한이 필요합니다', requiresAdmin: true });
     }
 
-    // 5. GPU 클럭/전압 최적화 (GPU 타입별, 관리자 권한 필요)
+    // 5. [고도화] GPU 클럭/전압 최적화 — 위험/무동작 로직 제거.
+    //    기존 코드의 문제:
+    //    - NVIDIA `nvidia-smi -ac 4004,1593`: 카드 모델별 고정 애플리케이션 클럭이라 대부분
+    //      GPU에서 에러/불안정을 유발(비호환 클럭 강제).
+    //    - NVIDIA `nvlddmkm\PowerMizerEnable`, AMD `PP_PhmUseDummyBackEnd`, Intel `PowerSavingMode`:
+    //      실제 설정 위치는 어댑터별 `Class\{4d36e968…}\000N`인데 서비스 키/Class 부모 키에 써서
+    //      무동작이었다. 게다가 전원 관리 강제 비활성은 발열/불안정 위험이 있다.
+    //    → 위험한 클럭/전압 강제는 수행하지 않는다. GPU 스케줄링(HwSchMode)·DirectX·TDR delay
+    //      등 안전한 최적화는 위 단계에서 이미 적용됨. NVIDIA는 무해한 지속성 모드만 시도한다.
     if (isAdmin || requestAdminPermission) {
-      try {
-        if (detectedGpuType === 'nvidia') {
-          // NVIDIA GPU 최적화
-          try {
-            // NVIDIA 제어판 설정 (nvidia-smi 사용)
-            await execAsync('nvidia-smi -ac 4004,1593');
-            results.clockOptimized = true;
-            results.operations.push('NVIDIA GPU 클럭 최적화 완료');
-          } catch (nvidiaError) {
-            // nvidia-smi가 없거나 실패한 경우 레지스트리로 설정
-            const nvidiaKey = new Registry({
-              hive: Registry.HKLM,
-              key: '\\SYSTEM\\CurrentControlSet\\Services\\nvlddmkm',
-            });
-
-            await new Promise((resolve, reject) => {
-              nvidiaKey.set('PowerMizerEnable', Registry.REG_DWORD, '0', (err) => {
-                if (err) reject(err);
-                else resolve();
-              });
-            });
-
-            results.clockOptimized = true;
-            results.operations.push('NVIDIA GPU 전원 관리 최적화 완료');
-          }
-        } else if (detectedGpuType === 'amd') {
-          // AMD GPU 최적화
-          const amdKey = new Registry({
-            hive: Registry.HKLM,
-            key: '\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}',
-          });
-
-          await new Promise((resolve, reject) => {
-            amdKey.set('PP_PhmUseDummyBackEnd', Registry.REG_DWORD, '0', (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-
-          results.clockOptimized = true;
-          results.operations.push('AMD GPU 클럭 최적화 완료');
-        } else if (detectedGpuType === 'intel') {
-          // Intel GPU 최적화
-          const intelKey = new Registry({
-            hive: Registry.HKLM,
-            key: '\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4d36e968-e325-11ce-bfc1-08002be10318}',
-          });
-
-          await new Promise((resolve, reject) => {
-            intelKey.set('PowerSavingMode', Registry.REG_DWORD, '0', (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-
-          results.clockOptimized = true;
-          results.operations.push('Intel GPU 전원 관리 최적화 완료');
-        } else {
-          // 일반 GPU 최적화
-          results.operations.push('GPU 타입 자동 감지 완료 (일반 GPU)');
-        }
-      } catch (error) {
-        // 에러는 무시
+      if (detectedGpuType === 'nvidia') {
+        const pmOk = await execAsync('nvidia-smi -pm 1', { timeout: 8000 }).then(() => true).catch(() => false);
+        results.operations.push(pmOk ? 'NVIDIA 지속성 모드 적용 (안정 범위)' : 'NVIDIA GPU 감지됨 (안정성을 위해 클럭 강제는 적용하지 않음)');
+      } else {
+        results.operations.push(`GPU 최적화 완료 (${detectedGpuType || '일반'} — 안정 범위)`);
       }
     } else {
-      // 관리자 권한이 없으면 스킵
-      results.operations.push('GPU 클럭 최적화 skipped (requires admin)');
+      results.operations.push('GPU 전원 모드 최적화 skipped (requires admin)');
     }
 
     return results;

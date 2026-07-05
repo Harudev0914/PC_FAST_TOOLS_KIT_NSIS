@@ -18,7 +18,10 @@ const { promisify } = require('util');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
+// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const Registry = require('winreg');
 const permissionsService = require('./permissions');
 const platformService = require('./platform');
@@ -362,9 +365,25 @@ foreach ($proc in $processes) {
     }
 
     try {
-      await execAsync('powershell -Command "Get-Process | ForEach-Object { try { $_.WorkingSet = $_.WorkingSet } catch {} }"');
-      results.memoryDefragmented = true;
-      results.operations.push('Memory defragmentation completed');
+      // [고도화] 기존엔 읽기 전용 $_.WorkingSet에 재대입(항상 무동작)이었다. 실제로 psapi의
+      // EmptyWorkingSet을 호출해 프로세스 워킹셋을 페이지아웃, 사용 가능 메모리를 회수한다.
+      const trimScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public class WSTrim { [DllImport("psapi.dll")] public static extern bool EmptyWorkingSet(IntPtr h); }
+'@
+Get-Process | Where-Object { $_.WorkingSet -gt 50MB -and $_.Id -ne $PID } | ForEach-Object { try { [WSTrim]::EmptyWorkingSet($_.Handle) | Out-Null } catch {} }
+`.trim();
+      const trimTemp = path.join(os.tmpdir(), `memory_trim_${Date.now()}.ps1`);
+      fs.writeFileSync(trimTemp, trimScript, 'utf8');
+      try {
+        await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${trimTemp}"`, { timeout: 15000 });
+        results.memoryDefragmented = true;
+        results.operations.push('워킹셋 트림 완료 (사용 가능 메모리 회수)');
+      } finally {
+        try { fs.unlinkSync(trimTemp); } catch (e) {}
+      }
     } catch (error) {
       results.errors.push({ operation: 'Memory defragmentation', error: error.message });
     }
@@ -552,18 +571,8 @@ foreach ($proc in $processes) {
 
     return results;
   } catch (error) {
-    return { 
-      success: false, 
-      error: error.message, 
-      operations: results.operations, 
-      errors: results.errors,
-      standbyMemoryCleared: results.standbyMemoryCleared,
-      pageFileOptimized: results.pageFileOptimized,
-      prefetchOptimized: results.prefetchOptimized,
-      processesTerminated: results.processesTerminated,
-      memoryDefragmented: results.memoryDefragmented,
-      virtualMemoryOptimized: results.virtualMemoryOptimized,
-    };
+    // [고도화] 성공 경로와 동일한 shape 유지 (기존엔 일부 필드를 누락한 다른 shape 반환)
+    return { ...results, success: false, error: error.message };
   }
 }
 

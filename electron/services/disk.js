@@ -19,7 +19,11 @@ const { promisify } = require('util');
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const execAsync = promisify(exec);
+// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
+// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다
+// (예: chkdsk/defrag는 명시적으로 더 긴 타임아웃을 지정).
+const _execRaw = promisify(exec);
+const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const Registry = require('winreg');
 const cleanerService = require('./cleaner');
 const diskDetailsService = require('./diskDetails');
@@ -203,6 +207,35 @@ async function optimize(options = {}) {
 
     await Promise.all(parallelDiskTasks);
 
+    // [고도화] 관리자 권한 없이 가능한 추가 정리 — Storage Sense 자동 정리 활성화 + 캐시 정리
+    try {
+      // Storage Sense 켜기(임시/휴지통 자동 정리) — 전부 HKCU라 관리자 권한 불필요
+      const ssBase = 'HKCU\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy';
+      await execAsync(`reg add "${ssBase}" /v 01 /t REG_DWORD /d 1 /f`, { timeout: 5000 }).catch(() => {});
+      await execAsync(`reg add "${ssBase}" /v 08 /t REG_DWORD /d 1 /f`, { timeout: 5000 }).catch(() => {});
+      await execAsync(`reg add "${ssBase}" /v 256 /t REG_DWORD /d 1 /f`, { timeout: 5000 }).catch(() => {});
+      await execAsync(`reg add "${ssBase}" /v 2048 /t REG_DWORD /d 30 /f`, { timeout: 5000 }).catch(() => {});
+      results.operations.push('Storage Sense 자동 정리 활성화');
+    } catch (error) {
+      results.errors.push({ operation: 'Storage Sense', error: error.message, requiresAdmin: false });
+    }
+
+    try {
+      // 썸네일/아이콘 캐시 정리 (사용 중이지 않은 .db 파일만 삭제, 잠긴 파일은 건너뜀)
+      const explorerCache = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Windows', 'Explorer');
+      let cacheDeleted = 0;
+      if (fs.existsSync(explorerCache)) {
+        for (const f of fs.readdirSync(explorerCache)) {
+          if (/^(thumbcache|iconcache)_.*\.db$/i.test(f)) {
+            try { fs.unlinkSync(path.join(explorerCache, f)); cacheDeleted++; } catch (e) {}
+          }
+        }
+      }
+      if (cacheDeleted > 0) results.operations.push(`썸네일/아이콘 캐시 ${cacheDeleted}개 정리`);
+    } catch (error) {
+      results.errors.push({ operation: '캐시 정리', error: error.message, requiresAdmin: false });
+    }
+
     if (isAdmin || requestAdminPermission) {
       try {
         await timeout(
@@ -263,7 +296,8 @@ async function optimize(options = {}) {
             console.warn('Failed to disable defrag schedule:', scheduleError);
           }
         } else {
-          await execAsync(`defrag ${diskLetter} /O`);
+          // 출력이 많아 기본 1MB maxBuffer를 넘기면 프로세스가 죽으므로 확장. 안전망 타임아웃(10분).
+          await execAsync(`defrag ${diskLetter} /O`, { timeout: 600000, maxBuffer: 1024 * 1024 * 20 });
           results.diskDefragmented = true;
           results.operations.push('HDD 조각 모음 완료');
         }
@@ -275,7 +309,8 @@ async function optimize(options = {}) {
 
     if (isAdmin || requestAdminPermission) {
       try {
-        await execAsync(`chkdsk ${diskLetter} /F`);
+        // chkdsk는 오래 걸릴 수 있어 기본 2분 타임아웃 대신 10분으로 연장(+버퍼 확장).
+        await execAsync(`chkdsk ${diskLetter} /F`, { timeout: 600000, maxBuffer: 1024 * 1024 * 20 });
         results.diskChecked = true;
         results.operations.push('디스크 검사 완료 (재부팅 필요할 수 있음)');
       } catch (error) {
@@ -475,7 +510,8 @@ async function optimize(options = {}) {
         });
         
         try {
-          await execAsync(`chkdsk ${diskLetter} /F /R`);
+          // chkdsk /R은 매우 오래 걸릴 수 있어 타임아웃 10분으로 연장(+버퍼 확장).
+          await execAsync(`chkdsk ${diskLetter} /F /R`, { timeout: 600000, maxBuffer: 1024 * 1024 * 20 });
           results.operations.push('NTFS 메타데이터 정리 완료 (재부팅 필요할 수 있음)');
         } catch (chkdskError) {
           if (chkdskError.message.includes('cannot lock') || chkdskError.message.includes('재부팅')) {

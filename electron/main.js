@@ -4,6 +4,15 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
 let mainWindow;
 
+// [고도화] 전역 안전망: 다수의 async IPC 핸들러/파이어앤포겟 호출에서 발생할 수 있는
+// 미처리 예외·Promise rejection이 앱을 조용히 죽이지 않도록 로깅하고 살아남게 한다.
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+});
+
 function createWindow() {
   // 개발 모드인지 먼저 확인하여 URL 준비
   let startUrl = null;
@@ -224,18 +233,13 @@ app.on('before-quit', async () => {
   }
 });
 
-app.whenReady().then(async () => {
-  try {
-    ipcAllocator = getIPCAllocator('ElectronIPC', 128 * 1024 * 1024); // 128MB
-    await ipcAllocator.init();
-    console.log('✅ IPC Allocator initialized:', ipcAllocator.getStats());
-  } catch (error) {
-    console.error('❌ Failed to initialize IPC Allocator:', error);
-    console.warn('⚠️  Continuing without IPC Allocator - will use standard IPC');
-    // IPC 할당자 실패해도 앱은 계속 실행 (일반 IPC로 폴백)
-    ipcAllocator = null;
-  }
-});
+// [최적화] PowerShell 기반 공유 메모리 IPC 할당자는 비활성화됨.
+// 이 할당자는 read/write/malloc 마다 Add-Type(csc.exe) C# 컴파일을 수행하는
+// PowerShell 프로세스를 새로 띄워 2초 폴링마다 프로세스가 쌓여 CPU 100%/화면 멈춤을
+// 유발했다. 또한 MapViewOfFile 주소가 단명 PowerShell 프로세스에서만 유효해
+// 실제 데이터 공유도 되지 않는다. Electron 표준 IPC(structured clone)가 더 빠르고
+// 안전하므로 항상 일반 IPC를 사용한다.
+ipcAllocator = null;
 
 // Version IPC
 ipcMain.handle('version:getCurrentVersion', async () => {
@@ -613,41 +617,9 @@ ipcMain.handle('history:schedule', async (event, config) => {
 // System Stats IPC
 ipcMain.handle('systemStats:getAll', async () => {
   try {
-    const stats = await systemStatsService.getAllStats();
-  
-  // IPC 할당자를 사용하여 shared memory에 저장 (zero-copy)
-  if (ipcAllocator && ipcAllocator.isInitialized) {
-    try {
-      const statsJson = JSON.stringify(stats);
-      const statsBuffer = Buffer.from(statsJson, 'utf8');
-      
-      // 기존 할당이 있으면 재사용, 없으면 새로 할당
-      let offset = null;
-      const headerResult = await ipcAllocator.allocator.read(0, 1024);
-      if (headerResult.success) {
-        const header = JSON.parse(headerResult.data.toString('utf8'));
-        const existingAlloc = header.allocations.find(a => a.type === 'systemStats');
-        if (existingAlloc) {
-          offset = existingAlloc.offset;
-        }
-      }
-      
-      if (!offset) {
-        const allocResult = await ipcAllocator.malloc(statsBuffer.length, 'systemStats');
-        offset = allocResult.offset;
-      }
-      
-      await ipcAllocator.write(offset, statsBuffer);
-      
-      // offset을 반환하여 렌더러에서 직접 읽을 수 있도록
-      return { ...stats, _sharedMemoryOffset: offset, _useSharedMemory: true };
-    } catch (error) {
-      console.error('Failed to store stats in shared memory:', error);
-      // 실패 시 일반 IPC로 반환
-    }
-  }
-  
-  return stats;
+    // Electron 표준 IPC(structured clone)로 통계 반환.
+    // 과거 PowerShell 공유 메모리 경로는 CPU 폭주/화면 멈춤을 유발해 제거됨.
+    return await systemStatsService.getAllStats();
   } catch (error) {
     console.error('Error in systemStats:getAll:', error);
     return { success: false, error: error.message };
@@ -1135,68 +1107,8 @@ app.whenReady().then(async () => {
     });
   });
   
-  // 창을 먼저 생성하고 URL을 로드한 후 관리자 권한 요청
+  // 창 생성 (관리자 권한 요청 프롬프트는 제거됨 - 시작 시 UAC 재실행 안 함)
   createWindow();
-  
-  // 창이 완전히 로드된 후 관리자 권한 확인 및 요청
-  if (mainWindow) {
-    mainWindow.webContents.once('did-finish-load', async () => {
-      // 약간의 지연을 두어 앱이 완전히 로드된 후 관리자 권한 요청
-      setTimeout(async () => {
-        const isAdmin = await platformService.isAdmin();
-        if (!isAdmin) {
-          // 관리자 권한이 없으면 사용자에게 물어보기
-          const result = await dialog.showMessageBox(mainWindow, {
-            type: 'question',
-            buttons: ['나중에', '관리자 권한 활성화'],
-            defaultId: 1,
-            title: '관리자 권한 요청',
-            message: '관리자 권한을 활성화하시겠습니까?',
-            detail: '일부 최적화 기능은 관리자 권한이 필요합니다. 관리자 권한을 활성화하면 더 많은 최적화 기능을 사용할 수 있습니다.',
-          });
-          
-          if (result.response === 1) {
-            // 사용자가 관리자 권한 활성화를 선택한 경우
-            // PowerShell로 관리자 권한으로 앱 재실행
-            try {
-              const { exec } = require('child_process');
-              const appPath = process.execPath;
-              
-              // 개발 모드인지 확인
-              if (isDev) {
-                // 개발 모드: 명령줄 인자로 URL 전달하여 재실행
-                const startUrl = 'http://127.0.0.1:5173';
-                // URL을 이스케이프하여 PowerShell 명령에 안전하게 전달
-                const escapedUrl = startUrl.replace(/'/g, "''");
-                exec(`powershell -Command "Start-Process -FilePath '${appPath}' -ArgumentList '--url=${escapedUrl}' -Verb RunAs"`, (error) => {
-                  if (error) {
-                    console.error('Failed to restart with admin privileges:', error);
-                  } else {
-                    // 현재 프로세스 종료
-                    app.quit();
-                    return;
-                  }
-                });
-              } else {
-                // 프로덕션 모드: 일반 재실행
-                exec(`powershell -Command "Start-Process -FilePath '${appPath}' -Verb RunAs"`, (error) => {
-                  if (error) {
-                    console.error('Failed to restart with admin privileges:', error);
-                  } else {
-                    // 현재 프로세스 종료
-                    app.quit();
-                    return;
-                  }
-                });
-              }
-            } catch (error) {
-              console.error('Error requesting admin privileges:', error);
-            }
-          }
-        }
-      }, 1000); // 앱이 완전히 로드된 후 1초 대기
-    });
-  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
