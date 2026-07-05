@@ -92,6 +92,7 @@ async function getNetworkAdapterStats() {
         ipv6: ethernetInterface.ip6 || '::',
         mac: ethernetInterface.mac || '',
         type: ethernetInterface.type || 'wired',
+        connectionType: 'Ethernet', // [실제 구현] 기존엔 채워지지 않아 UI에 안 뜨던 필드
         speed: ethernetInterface.speed || null,
         mtu: ethernetInterface.mtu || null,
         dhcp: ethernetInterface.dhcp || false,
@@ -112,6 +113,7 @@ async function getNetworkAdapterStats() {
         ipv6: wifiInterface.ip6 || '::',
         mac: wifiInterface.mac || '',
         type: wifiInterface.type || 'wireless',
+        connectionType: '802.11', // [실제 구현] 기존엔 채워지지 않아 UI에 안 뜨던 필드
         speed: wifiInterface.speed || null,
         mtu: wifiInterface.mtu || null,
         dhcp: wifiInterface.dhcp || false,

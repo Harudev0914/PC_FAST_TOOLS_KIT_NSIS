@@ -72,8 +72,11 @@ async function getMemoryDetails() {
     }
 
     if (process.platform === 'win32') {
-      hardwareReserved = Math.max(0, totalMemGB - availableGB - (totalMemGB - availableGB) * 0.95);
-      hardwareReserved = Math.round(hardwareReserved * 1024) / 1024;
+      // [실제 구현] 하드웨어 예약 메모리 = 설치된 물리 RAM(memLayout 모듈 합) − OS 가용 총량.
+      // (기존엔 "사용량의 5%"를 지어내 실제 예약량과 무관했음. memLayout은 이미 위에서 조회됨)
+      const installedBytes = Array.isArray(memLayout) ? memLayout.reduce((s, m) => s + (m.size || 0), 0) : 0;
+      const installedGB = installedBytes / (1024 * 1024 * 1024);
+      hardwareReserved = installedGB > totalMemGB ? Math.round((installedGB - totalMemGB) * 1024) / 1024 : 0;
     }
 
     let pagingPool = 0;
