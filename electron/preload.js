@@ -51,6 +51,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     applySoundBoost: (settings) => ipcRenderer.invoke('audio:applySoundBoost', settings),
     getEQPresets: () => ipcRenderer.invoke('audio:getEQPresets'),
     detectModels: () => ipcRenderer.invoke('audio:detectModels'),
+    isEqualizerApoInstalled: () => ipcRenderer.invoke('audio:isEqualizerApoInstalled'),
+    openEqualizerApoDownload: () => ipcRenderer.invoke('audio:openEqualizerApoDownload'),
   },
 
   // Gaming

@@ -490,4 +490,5 @@ module.exports = {
   applySoundBoost,
   getEQPresets,
   detectModels,
+  detectEqualizerAPO,
 };

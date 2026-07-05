@@ -16,7 +16,8 @@ function SoundBoost() {
   const [selectedModel, setSelectedModel] = useState(null);
   const [availableModels, setAvailableModels] = useState([]);
   const [detectingModels, setDetectingModels] = useState(false);
-  
+  const [apoInstalled, setApoInstalled] = useState(null); // Equalizer APO 설치 여부(실제 EQ 적용 가능 여부)
+
   const [modelSettings, setModelSettings] = useState({
     superpowered: {
       eqEnabled: false,
@@ -55,7 +56,19 @@ function SoundBoost() {
     loadDevices();
     loadEQPresets();
     loadModels();
+    checkApoStatus();
   }, []);
+
+  // [실제 구현] Equalizer APO(시스템 전역 EQ) 설치 여부 확인 → EQ/베이스/트레블 실제 적용 가능 여부
+  const checkApoStatus = async () => {
+    if (!window.electronAPI?.audio?.isEqualizerApoInstalled) return;
+    try {
+      const r = await window.electronAPI.audio.isEqualizerApoInstalled();
+      setApoInstalled(!!(r && r.installed));
+    } catch {
+      setApoInstalled(false);
+    }
+  };
 
   // 사용 가능한 오디오 처리 모델 감지 (이전엔 호출되지 않아 모델 목록이 항상 비어 있었음)
   const loadModels = async () => {
@@ -224,6 +237,37 @@ function SoundBoost() {
           </p>
         </div>
       </div>
+
+      {/* [실제 구현] Equalizer APO 상태 안내 — 설치 시 EQ/베이스/트레블이 시스템 전역에 실제 적용됨 */}
+      {apoInstalled === false && (
+        <div className="sound-boost-card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '240px' }}>
+              <div className="card-title" style={{ marginBottom: '4px' }}>실제 EQ · 베이스 · 트레블 활성화</div>
+              <p className="page-description" style={{ margin: 0 }}>
+                마스터 볼륨은 지금 바로 실제 반영됩니다. EQ·베이스·트레블까지 실제로 적용하려면 무료 시스템 이퀄라이저 <b>Equalizer APO</b>가 필요합니다 (설치 후 재부팅 · 출력 장치 선택). 설치되면 이 앱이 자동으로 설정을 적용합니다.
+              </p>
+            </div>
+            <button
+              className="action-button apply-button"
+              style={{ whiteSpace: 'nowrap' }}
+              onClick={() => window.electronAPI?.audio?.openEqualizerApoDownload?.()}
+            >
+              Equalizer APO 다운로드
+            </button>
+          </div>
+        </div>
+      )}
+      {apoInstalled === true && (
+        <div className="sound-boost-card">
+          <div className="success-message">
+            <div className="success-icon">✓</div>
+            <div className="success-text">
+              <h3 className="success-title" style={{ margin: 0 }}>Equalizer APO 감지됨 — EQ·베이스·트레블이 시스템에 실제 적용됩니다</h3>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 오디오 처리 모델 선택 (enabled일 때만 표시) */}
       {enabled && (

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -404,6 +404,25 @@ ipcMain.handle('audio:detectModels', async () => {
   } catch (error) {
     console.error('Error in audio:detectModels:', error);
     return { success: false, error: error.message, models: [] };
+  }
+});
+
+// 실제 EQ/베이스를 시스템 전역에 적용하는 Equalizer APO 설치 여부 확인
+ipcMain.handle('audio:isEqualizerApoInstalled', async () => {
+  try {
+    return { installed: await audioService.detectEqualizerAPO() };
+  } catch (error) {
+    return { installed: false, error: error.message };
+  }
+});
+
+// Equalizer APO 공식 다운로드 페이지를 기본 브라우저로 연다 (URL은 고정 — 렌더러 입력 아님)
+ipcMain.handle('audio:openEqualizerApoDownload', async () => {
+  try {
+    await shell.openExternal('https://sourceforge.net/projects/equalizerapo/');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 });
 
