@@ -239,54 +239,11 @@ async function applySoundBoost(settings) {
     results.operations.push('설정 저장 완료');
 
     if (settings.selectedModel && settings.modelSettings) {
-      const modelId = settings.selectedModel;
-      const modelConfig = settings.modelSettings;
-      
-      try {
-        if (modelId === 'superpowered') {
-          if (modelConfig.eqEnabled) {
-            results.operations.push('Superpowered EQ 적용 완료');
-          }
-          if (modelConfig.compressionEnabled) {
-            results.operations.push(`Superpowered 압축 적용 완료 (비율: ${modelConfig.compressionRatio}:1)`);
-          }
-          if (modelConfig.filterEnabled) {
-            results.operations.push(`Superpowered 필터 적용 완료 (컷오프: ${modelConfig.filterCutoff}Hz)`);
-          }
-          if (modelConfig.mixingEnabled) {
-            results.operations.push('Superpowered 믹싱 적용 완료');
-          }
-          if (modelConfig.effectsEnabled) {
-            results.operations.push('Superpowered 효과 처리 적용 완료');
-          }
-        } else if (modelId === 'miniaudio') {
-          if (modelConfig.filterEnabled) {
-            results.operations.push(`Miniaudio 필터 적용 완료 (타입: ${modelConfig.filterType}, 컷오프: ${modelConfig.filterCutoff}Hz)`);
-          }
-          if (modelConfig.processingEnabled) {
-            results.operations.push(`Miniaudio 프로세싱 적용 완료 (지연: ${modelConfig.processingLatency}ms)`);
-          }
-          if (modelConfig.mixingEnabled) {
-            results.operations.push('Miniaudio 믹싱 적용 완료');
-          }
-        } else if (modelId === 'portaudio') {
-          if (modelConfig.ioEnabled) {
-            results.operations.push('PortAudio I/O 활성화 완료');
-          }
-          if (modelConfig.dspEnabled) {
-            results.operations.push(`PortAudio DSP 적용 완료 (지연: ${modelConfig.latency}ms, 샘플레이트: ${modelConfig.sampleRate}Hz)`);
-          }
-        } else if (modelId === 'freedsp') {
-          if (modelConfig.eqEnabled) {
-            results.operations.push('FreeDSP EQ 적용 완료');
-          }
-          if (modelConfig.bassBoostEnabled) {
-            results.operations.push(`FreeDSP 베이스 강화 적용 완료 (레벨: ${modelConfig.bassBoostLevel}dB)`);
-          }
-        }
-      } catch (error) {
-        results.errors.push({ action: `model_${modelId}`, error: error.message });
-      }
+      // [정직성] 선택한 오디오 처리 모델(Superpowered/miniaudio/PortAudio/FreeDSP)의 EQ·압축·
+      // 필터 등은 시스템 오디오 스트림에 대한 "실시간 DSP"가 필요하며, 이는 네이티브 오디오
+      // 모듈 도입이 있어야 실제 동작한다. 설정 값은 위에서 파일에 저장(기억)되지만, 여기서
+      // "적용 완료"로 오보고하지 않는다. (실제 하드웨어에 반영되는 것은 아래 마스터 볼륨)
+      results.operations.push(`오디오 처리 모델 설정 저장됨 (${settings.selectedModel}) — 실시간 DSP는 네이티브 모듈 필요`);
     }
 
     if (settings.enabled) {
