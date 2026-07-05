@@ -421,8 +421,8 @@ Get-Process | Where-Object { $_.WorkingSet -gt 50MB -and $_.Id -ne $PID } | ForE
           });
         });
         
-        results.compressionOptimized = true;
-      results.operations.push('Memory compression optimized');
+        // [고도화] DisableCompression은 현대 Windows에서 무시되는 레거시 값이라 효과가 없다.
+        // 성공으로 보고하지 않는다(오탐 방지). 실제 압축 제어는 Disable-MMAgent가 필요.
     } catch (error) {
     }
   } else {
@@ -452,8 +452,8 @@ Get-Process | Where-Object { $_.WorkingSet -gt 50MB -and $_.Id -ne $PID } | ForE
           });
         });
         
-        results.numaOptimized = true;
-      results.operations.push('NUMA optimization completed');
+        // [고도화] Get-NumaNode는 존재하지 않는 cmdlet이고 NumaTopology도 미인식 값이라
+        // 둘 다 무효 → 성공으로 보고하지 않는다(오탐 방지).
     } catch (error) {
     }
   } else {

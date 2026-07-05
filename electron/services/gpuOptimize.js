@@ -173,8 +173,8 @@ async function optimize(options = {}) {
                 }),
               ]);
 
-              results.directXOptimized = true;
-              results.operations.push('DirectX 최적화 완료');
+              // [고도화] DirectX\DisableHardwareAcceleration / Direct3D\DisableFrameBuffer은
+              // 실존하지 않는 키라 무효 → 성공으로 보고하지 않는다(오탐 방지).
             } catch (error) {
               // 에러는 무시
             }
