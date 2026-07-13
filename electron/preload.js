@@ -103,15 +103,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
     detectLibraries: () => ipcRenderer.invoke('computeOptimization:detectLibraries'),
   },
 
-  // IPC Allocator (Shared Memory)
-  ipcAllocator: {
-    open: () => ipcRenderer.invoke('ipcAllocator:open'),
-    read: (offset) => ipcRenderer.invoke('ipcAllocator:read', offset),
-    malloc: (size, type) => ipcRenderer.invoke('ipcAllocator:malloc', size, type),
-    write: (offset, data) => ipcRenderer.invoke('ipcAllocator:write', offset, data),
-    getStats: () => ipcRenderer.invoke('ipcAllocator:getStats'),
-  },
-
   // System Stats
   systemStats: {
     getAll: () => ipcRenderer.invoke('systemStats:getAll'),

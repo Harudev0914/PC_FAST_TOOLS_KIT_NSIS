@@ -1,8 +1,8 @@
 .title-bar {
   width: 100%;
   height: 32px;
-  background-color: #14161B;
-  border-bottom: 1px solid #3a3a3a;
+  background-color: var(--bg-app);
+  border-bottom: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -25,7 +25,7 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  color: #b0b0b0;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 400;
   letter-spacing: 0.5px;
@@ -45,7 +45,7 @@
   height: 32px;
   border: none;
   background-color: transparent;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -56,11 +56,11 @@
 }
 
 .title-bar-button:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--overlay);
 }
 
 .title-bar-button.close-button:hover {
-  background-color: #e74c3c;
+  background-color: var(--error);
   color: white;
 }
 

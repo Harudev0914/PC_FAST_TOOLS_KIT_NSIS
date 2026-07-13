@@ -42,11 +42,26 @@ module.exports = {
       rules: { 'no-undef': 'off' },
     },
     {
-      // Vite config is ESM.
-      files: ['vite.config.js'],
+      // Vite / Vitest config is ESM.
+      files: ['vite.config.js', 'vitest.config.js'],
       env: { node: true, browser: false },
       parserOptions: { sourceType: 'module' },
       rules: { 'no-undef': 'off' },
+    },
+    {
+      // Vitest test files — provide the test globals (describe/it/expect/vi).
+      files: ['test/**/*.{js,jsx}'],
+      env: { node: true, browser: true },
+      globals: {
+        describe: 'readonly',
+        it: 'readonly',
+        expect: 'readonly',
+        vi: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+      },
     },
   ],
   ignorePatterns: [

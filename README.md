@@ -63,6 +63,7 @@ Optimizer-Product/
 | Sound Boost | `SoundBoost` | 볼륨 증폭 · EQ (Equalizer APO 자동 설치·연동) |
 | Delta Force Cleaner | `DeltaForceCleaner` | 게임 캐시 정리 · Windows API 최적화 |
 | Game Mode | `GameMode` | 게이밍 모드 On/Off, Fast Ping 최적화 |
+| Updates | `SoftwareUpdater` | winget 기반 소프트웨어 업데이트 + 드라이버 목록/업데이트 |
 
 ---
 
@@ -81,6 +82,8 @@ npm run dist:win     # Windows NSIS 인스톨러 생성 (dist-installer/)
 npm run lint         # ESLint 검사
 npm run lint:fix     # 자동 수정
 npm run format       # Prettier 포매팅
+npm test             # Vitest 단위/스모크 테스트
+npm run typecheck    # tsc --noEmit (JSDoc + @ts-check 파일 타입 검사)
 ```
 
 > `dist/`, `dist-installer/` 등 빌드 산출물은 저장소에 커밋하지 않습니다(`.gitignore` 참고).
@@ -101,11 +104,18 @@ const { execAsync, execFileAsync, executePowerShell, withTimeout } = require('./
 ### 통계 캐시 (`cache.js`)
 `systemStats.getAllStats()`는 렌더러가 2초 주기로 폴링하며, 내부적으로 여러 네이티브 프로세스(`tasklist`/`wmic`/`typeperf`/`nvidia-smi`/PowerShell)를 스폰합니다. 비용이 큰 지표(프로세스 수·GPU·네트워크)를 **키별 TTL 동적 캐시**로 감싸 폴링 주기 내 중복 스폰을 제거했습니다.
 
-### 소프트웨어 업데이트 (`updater.js`)
-`winget upgrade` 출력을 파싱해 실제 업그레이드 가능한 패키지를 반환합니다(OS 언어와 무관하게 표를 파싱). IPC: `updater:getInstalled`, `updater:checkUpdates`, `updater:checkAllUpdates`, `updater:update`.
+### 소프트웨어 업데이트 (`updater.js` + `wingetParse.js`)
+`winget upgrade` 출력을 파싱해 실제 업그레이드 가능한 패키지를 반환합니다(OS 언어와 무관하게 표를 파싱). 파싱 로직은 순수 함수 `wingetParse.js`로 분리되어 단위 테스트됩니다. IPC: `updater:getInstalled`, `updater:checkUpdates`, `updater:checkAllUpdates`, `updater:update`.
+
+### IPC 핸들러 래퍼 (`main.js`)
+78개 핸들러에 복붙돼 있던 `try/catch → console.error → { success:false, error }` 보일러플레이트를 공용 `handle(channel, fn, errorExtra)` 래퍼로 통합했습니다. `errorExtra`로 기존의 다양한 에러 폴백 형태(`{ files: [] }` 등)를 보존합니다. (특수 처리가 필요한 5개 핸들러는 원형 유지.)
 
 ### 디자인 토큰 (`src/styles/index.css`)
-`:root`에 색상/여백/반경 토큰을 정의했습니다. 새 스타일은 하드코딩 색상 대신 `var(--…)`를 사용하세요.
+`:root`에 색상/여백/반경 토큰을 정의하고, 라이브 스타일시트 10개의 하드코딩 색상 252곳을 `var(--…)`로 치환했습니다. 새 스타일은 하드코딩 색상 대신 토큰을 사용하세요.
+
+### 테스트 & 타입 (`test/`, `tsconfig.json`)
+- **Vitest + React Testing Library**: 순수 함수(winget 파서·캐시·차트)와 컴포넌트 스모크 테스트. `npm test`.
+- **TypeScript 점진 도입**: `// @ts-check` + JSDoc이 붙은 순수 모듈만 `tsc --noEmit`로 검사합니다(빌드 무영향). 파일 상단에 `// @ts-check`를 추가하면 커버리지가 늘어납니다.
 
 ### 보안
 - `BrowserWindow`: `contextIsolation: true`, `sandbox: true`, `nodeIntegration: false`, `enableRemoteModule: false`.
@@ -127,17 +137,22 @@ const { execAsync, execFileAsync, executePowerShell, withTimeout } = require('./
 
 ---
 
-## 알려진 개선 과제 (Roadmap)
+## 개선 이력 & 남은 과제 (Roadmap)
 
-리팩터링을 이어갈 다음 후보들입니다.
+### 최근 반영됨
+- ✅ **IPC 핸들러 래퍼** — 78개 핸들러의 try/catch 보일러플레이트를 공용 `handle()`로 통합(채널·반환 형태 100% 보존).
+- ✅ **CSS 토큰 전면 적용** — 라이브 스타일시트의 하드코딩 색상 252곳을 `var(--…)`로 치환.
+- ✅ **미사용 백엔드 정리** — 비활성 `ipcAllocator`/`sharedMemory` 서비스 및 IPC/preload 바인딩 제거.
+- ✅ **드라이버·소프트웨어 업데이트 UI 재도입** — winget 기반 `SoftwareUpdater` 패널 추가.
+- ✅ **테스트 도입** — Vitest + RTL 스모크/단위 테스트.
+- ✅ **TypeScript 점진 도입** — `tsconfig` + `typecheck` 스크립트, 순수 모듈 `// @ts-check`.
+- ✅ **`drawChart` 분리** — SmartOptimization의 차트 로직을 순수 모듈로 추출.
 
-- **`SmartOptimization.jsx` 분해** — 2,800줄 단일 컴포넌트를 패널(Cpu/Memory/Disk/Network/Gpu)·훅(`useSystemStats`, `useOptimizer`)·`drawChart`로 분리.
-- **IPC 핸들러 래퍼** — `main.js`의 82개 핸들러에 반복되는 try/catch를 공용 `wrap()` + 채널 테이블로 축약.
-- **CSS 토큰 전면 적용** — 남은 하드코딩 색상을 `var(--…)`로 치환.
-- **미사용 백엔드 정리** — `ipcAllocator`/`sharedMemory`(비활성) 및 UI가 없는 IPC 채널 정리.
-- **드라이버·소프트웨어 업데이트 UI 재도입** — 백엔드는 동작하나 현재 렌더러 패널이 없음.
-- **테스트 도입** — Vitest + React Testing Library 기반 스모크 테스트.
-- **TypeScript 점진 도입**.
+### 남은 과제
+- **`SmartOptimization.jsx` 추가 분해** — 2,700줄 컴포넌트를 패널(Cpu/Memory/Disk/Network/Gpu)·훅(`useSystemStats`, `useOptimizer`)으로 분리하고, `selectedComponent.startsWith('gpu-')` 문자열 파싱을 `TARGETS` 디스크립터 테이블로 대체. (런타임 검증이 필요해 신중히 진행)
+- **UI 없는 나머지 IPC 채널 정리** — `version:*`, 일부 `computeOptimization`/`fastPing` 서브채널 등.
+- **에러 처리 일원화** — 라이브 컴포넌트의 `catch` 블록을 `errorHandler.js`로 라우팅.
+- **TypeScript 커버리지 확대** — `// @ts-check`를 서비스 전반으로 확대.
 
 ---
 

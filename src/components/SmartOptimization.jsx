@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ColorPicker from './ColorPicker';
+import { drawChart as drawChartImpl } from './chart/drawChart';
 import '../styles/SmartOptimization.css';
 
 function SmartOptimization() {
@@ -350,110 +351,9 @@ function SmartOptimization() {
   }, [updateStats]);
 
   // 차트 그리기 헬퍼 함수 (useCallback으로 메모이제이션)
-  const drawChart = React.useCallback((ctx, data, color, maxValue) => {
-    if (!ctx || !ctx.canvas) return;
-    
-    const width = ctx.canvas.width;
-    const height = ctx.canvas.height;
-
-    // 배경 지우기
-    ctx.fillStyle = '#1A1A1E';
-    ctx.fillRect(0, 0, width, height);
-
-    // 그리드 그리기
-    ctx.strokeStyle = '#2a2a2a';
-    ctx.lineWidth = 1;
-    for (let i = 0; i <= 10; i++) {
-      const y = (height / 10) * i;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
-      ctx.stroke();
-    }
-
-    // 데이터가 없으면 그리드만 표시하고 종료
-    if (!data || data.length === 0) {
-      // 그리드만 표시하고 종료 (데이터가 없어도 차트는 표시)
-      return;
-    }
-
-    const points = data.map((d, i) => {
-      const x = data.length > 1 ? (width / (data.length - 1)) * i : width / 2;
-      const y = height - Math.max(0, Math.min(height, (d.value / maxValue) * height));
-      return { x, y };
-    });
-
-    // 영역 차트 그리기 (라인 아래 영역 채우기)
-    if (points.length > 1) {
-      // 그라디언트 생성 (영역 채우기용)
-      const gradient = ctx.createLinearGradient(0, 0, 0, height);
-      gradient.addColorStop(0, color);
-      gradient.addColorStop(1, color + '00'); // 투명도 추가
-      
-      // 영역 채우기
-      ctx.fillStyle = color + '40'; // 약간 투명한 색상 (hex alpha: 40 = 약 25% 불투명도)
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, height); // 왼쪽 하단
-      ctx.lineTo(points[0].x, points[0].y); // 첫 번째 점
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.lineTo(points[points.length - 1].x, height); // 오른쪽 하단
-      ctx.closePath();
-      ctx.fill();
-      
-      // 라인 그리기
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(points[0].x, points[0].y);
-      for (let i = 1; i < points.length; i++) {
-        ctx.lineTo(points[i].x, points[i].y);
-      }
-      ctx.stroke();
-      
-      // 각 포인트에 점 그리기 (시간별 포인트)
-      ctx.fillStyle = color;
-      points.forEach((point) => {
-        ctx.beginPath();
-        ctx.arc(point.x, point.y, 3, 0, Math.PI * 2);
-        ctx.fill();
-        // 점 주변에 배경색 테두리 추가 (가시성 향상)
-        ctx.strokeStyle = '#1A1A1E';
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      });
-    } else if (points.length === 1) {
-      // 데이터가 1개일 때도 영역으로 표시
-      ctx.fillStyle = color + '40';
-      ctx.beginPath();
-      ctx.moveTo(0, height);
-      ctx.lineTo(0, points[0].y);
-      ctx.lineTo(width, points[0].y);
-      ctx.lineTo(width, height);
-      ctx.closePath();
-      ctx.fill();
-      
-      // 라인 그리기
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, points[0].y);
-      ctx.lineTo(width, points[0].y);
-      ctx.stroke();
-      
-      // 포인트에 점 그리기
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.arc(points[0].x, points[0].y, 3, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = '#1A1A1E';
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }, []);
+  // [클린코드] 차트 그리기 로직은 순수 함수로 분리(./chart/drawChart). useCallback으로
+  // 안정적 식별자를 유지해 아래 useEffect들의 의존성 배열이 그대로 동작한다.
+  const drawChart = React.useCallback(drawChartImpl, []);
 
   // 디스크 차트 그리기 (Active Time, Read Speed, Write Speed) - historyData 업데이트 시마다 재그리기
   useEffect(() => {

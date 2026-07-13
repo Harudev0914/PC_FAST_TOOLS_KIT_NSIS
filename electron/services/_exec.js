@@ -1,3 +1,4 @@
+// @ts-check
 // @_exec.js
 // 공통 프로세스 실행 유틸리티. 기존에는 ~19개 서비스가 아래 execAsync 래퍼와
 // PowerShell UTF-8 프리앰블, timeout 레이스 헬퍼를 각자 복붙해 사용했다.

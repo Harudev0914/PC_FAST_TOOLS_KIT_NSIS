@@ -148,18 +148,23 @@ export async function withErrorHandling(asyncFn, options = {}) {
 export function isNetworkError(error) {
   if (!error) return false;
 
+  // 패턴은 소문자로 둔다. 아래에서 message를 소문자화해 비교하므로 대문자 패턴
+  // (ECONNREFUSED 등)은 절대 매칭되지 않던 버그가 있었다.
   const networkErrorPatterns = [
     'network',
     'fetch',
-    'ECONNREFUSED',
-    'ENOTFOUND',
-    'ETIMEDOUT',
-    'ECONNRESET',
+    'econnrefused',
+    'enotfound',
+    'etimedout',
+    'econnreset',
     'timeout',
   ];
 
   const errorMessage = (error.message || '').toLowerCase();
-  return networkErrorPatterns.some(pattern => errorMessage.includes(pattern));
+  const errorCode = (error.code || '').toString().toLowerCase();
+  return networkErrorPatterns.some(
+    (pattern) => errorMessage.includes(pattern) || errorCode.includes(pattern)
+  );
 }
 
 export function getUserFriendlyErrorMessage(error) {

@@ -238,216 +238,118 @@ const fastPingService = require('./services/fastPing');
 const gpuOptimizeService = require('./services/gpuOptimize');
 const computeOptimizationService = require('./services/computeOptimization');
 const deltaForceCleanerService = require('./services/deltaForceCleaner');
-const { getIPCAllocator } = require('./services/ipcAllocator');
 const networkOptimizationService = require('./services/networkOptimization');
 const versionService = require('./services/version');
 
-// IPC 가상 메모리 할당자 초기화 (메인 프로세스)
-let ipcAllocator = null;
+// [정리] PowerShell 기반 공유 메모리 IPC 할당자(ipcAllocator/sharedMemory)는 제거됨.
+// read/write/malloc 마다 Add-Type(csc.exe) C# 컴파일을 하는 PowerShell 프로세스를
+// 새로 띄워 2초 폴링마다 프로세스가 쌓여 CPU 100%/멈춤을 유발했고, MapViewOfFile
+// 주소가 단명 프로세스에서만 유효해 실제 공유도 되지 않았다. Electron 표준 IPC를 사용한다.
 
-// 앱 종료 시 정리
-app.on('before-quit', async () => {
-  if (ipcAllocator) {
+// [클린코드] IPC 핸들러 공용 래퍼. 78개 핸들러에 복붙돼 있던 동일한
+// try/catch → console.error → { success:false, error } 패턴을 한 곳으로 모은다.
+// errorExtra: 에러 시 반환 객체에 병합할 추가 필드(예: { files: [] })로 기존 폴백 형태를 보존한다.
+function handle(channel, fn, errorExtra = { success: false }) {
+  ipcMain.handle(channel, async (event, ...args) => {
     try {
-      await ipcAllocator.close();
-      console.log('IPC Allocator closed');
+      return await fn(event, ...args);
     } catch (error) {
-      console.error('Failed to close IPC Allocator:', error);
+      console.error(`Error in ${channel}:`, error);
+      return { ...errorExtra, error: error.message };
     }
-  }
-});
-
-// [최적화] PowerShell 기반 공유 메모리 IPC 할당자는 비활성화됨.
-// 이 할당자는 read/write/malloc 마다 Add-Type(csc.exe) C# 컴파일을 수행하는
-// PowerShell 프로세스를 새로 띄워 2초 폴링마다 프로세스가 쌓여 CPU 100%/화면 멈춤을
-// 유발했다. 또한 MapViewOfFile 주소가 단명 PowerShell 프로세스에서만 유효해
-// 실제 데이터 공유도 되지 않는다. Electron 표준 IPC(structured clone)가 더 빠르고
-// 안전하므로 항상 일반 IPC를 사용한다.
-ipcAllocator = null;
+  });
+}
 
 // Version IPC
-ipcMain.handle('version:getCurrentVersion', async () => {
-  try {
-    return { success: true, version: versionService.getCurrentVersion() };
-  } catch (error) {
-    console.error('Error getting current version:', error);
-    return { success: false, error: error.message };
-  }
+handle('version:getCurrentVersion', async () => {
+  return { success: true, version: versionService.getCurrentVersion() };
 });
 
-ipcMain.handle('version:checkVersion', async (event, options) => {
-  try {
-    return await versionService.checkVersion(options || {});
-  } catch (error) {
-    console.error('Error checking version:', error);
-    return { success: false, error: error.message };
-  }
+handle('version:checkVersion', async (event, options) => {
+  return await versionService.checkVersion(options || {});
 });
 
-ipcMain.handle('version:getTrackingInfo', async () => {
-  try {
-    return { success: true, trackingInfo: versionService.getTrackingInfo() };
-  } catch (error) {
-    console.error('Error getting tracking info:', error);
-    return { success: false, error: error.message };
-  }
+handle('version:getTrackingInfo', async () => {
+  return { success: true, trackingInfo: versionService.getTrackingInfo() };
 });
 
-ipcMain.handle('version:validateLicense', async () => {
-  try {
-    return { success: true, license: versionService.validateLicense() };
-  } catch (error) {
-    console.error('Error validating license:', error);
-    return { success: false, error: error.message };
-  }
+handle('version:validateLicense', async () => {
+  return { success: true, license: versionService.validateLicense() };
 });
 
 // Cleaner IPC
-ipcMain.handle('cleaner:scan', async () => {
-  try {
-    return await cleanerService.scan();
-  } catch (error) {
-    console.error('Error in cleaner:scan:', error);
-    return { success: false, error: error.message, files: [], totalSize: 0, errors: [] };
-  }
-});
+handle('cleaner:scan', async () => {
+  return await cleanerService.scan();
+}, { success: false, files: [], totalSize: 0, errors: [] });
 
-ipcMain.handle('cleaner:clean', async (event, options) => {
-  try {
-    return await cleanerService.clean(options || {});
-  } catch (error) {
-    console.error('Error in cleaner:clean:', error);
-    return { success: false, error: error.message, cleaned: 0, freed: 0, errors: [] };
-  }
-});
+handle('cleaner:clean', async (event, options) => {
+  return await cleanerService.clean(options || {});
+}, { success: false, cleaned: 0, freed: 0, errors: [] });
 
 // Memory IPC
-ipcMain.handle('memory:getStats', async () => {
-  try {
-    return await memoryService.getStats();
-  } catch (error) {
-    console.error('Error in memory:getStats:', error);
-    return { success: false, error: error.message };
-  }
+handle('memory:getStats', async () => {
+  return await memoryService.getStats();
 });
 
-ipcMain.handle('memory:optimize', async (event, options) => {
-  try {
-    return await memoryService.optimize(options || {});
-  } catch (error) {
-    console.error('Error in memory:optimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('memory:optimize', async (event, options) => {
+  return await memoryService.optimize(options || {});
 });
 
-ipcMain.handle('memory:getProcesses', async () => {
-  try {
-    return await memoryService.getProcesses();
-  } catch (error) {
-    console.error('Error in memory:getProcesses:', error);
-    return { success: false, error: error.message, processes: [] };
-  }
-});
+handle('memory:getProcesses', async () => {
+  return await memoryService.getProcesses();
+}, { success: false, processes: [] });
 
-ipcMain.handle('memory:killProcess', async (event, pid) => {
-  try {
-    if (!pid || typeof pid !== 'number') {
-      return { success: false, error: 'Invalid process ID' };
-    }
-    return await memoryService.killProcess(pid);
-  } catch (error) {
-    console.error('Error in memory:killProcess:', error);
-    return { success: false, error: error.message };
+handle('memory:killProcess', async (event, pid) => {
+  if (!pid || typeof pid !== 'number') {
+    return { success: false, error: 'Invalid process ID' };
   }
+  return await memoryService.killProcess(pid);
 });
 
 // Audio IPC
-ipcMain.handle('audio:getDevices', async () => {
-  try {
-    return await audioService.getDevices();
-  } catch (error) {
-    console.error('Error in audio:getDevices:', error);
-    return { success: false, error: error.message, devices: [] };
+handle('audio:getDevices', async () => {
+  return await audioService.getDevices();
+}, { success: false, devices: [] });
+
+handle('audio:setVolume', async (event, deviceId, volume) => {
+  if (!deviceId || typeof volume !== 'number' || volume < 0 || volume > 100) {
+    return { success: false, error: 'Invalid parameters' };
   }
+  return await audioService.setVolume(deviceId, volume);
 });
 
-ipcMain.handle('audio:setVolume', async (event, deviceId, volume) => {
-  try {
-    if (!deviceId || typeof volume !== 'number' || volume < 0 || volume > 100) {
-      return { success: false, error: 'Invalid parameters' };
-    }
-    return await audioService.setVolume(deviceId, volume);
-  } catch (error) {
-    console.error('Error in audio:setVolume:', error);
-    return { success: false, error: error.message };
-  }
+handle('audio:boost', async (event, enabled) => {
+  return await audioService.boost(enabled === true);
 });
 
-ipcMain.handle('audio:boost', async (event, enabled) => {
-  try {
-    return await audioService.boost(enabled === true);
-  } catch (error) {
-    console.error('Error in audio:boost:', error);
-    return { success: false, error: error.message };
-  }
+handle('audio:getSettings', async () => {
+  return await audioService.getSettings();
 });
 
-ipcMain.handle('audio:getSettings', async () => {
-  try {
-    return await audioService.getSettings();
-  } catch (error) {
-    console.error('Error in audio:getSettings:', error);
-    return { success: false, error: error.message };
+handle('audio:applySoundBoost', async (event, settings) => {
+  if (!settings || typeof settings !== 'object') {
+    return { success: false, error: 'Invalid settings object' };
   }
+  return await audioService.applySoundBoost(settings);
 });
 
-ipcMain.handle('audio:applySoundBoost', async (event, settings) => {
-  try {
-    if (!settings || typeof settings !== 'object') {
-      return { success: false, error: 'Invalid settings object' };
-    }
-    return await audioService.applySoundBoost(settings);
-  } catch (error) {
-    console.error('Error in audio:applySoundBoost:', error);
-    return { success: false, error: error.message };
-  }
-});
+handle('audio:getEQPresets', async () => {
+  return await audioService.getEQPresets();
+}, { success: false, presets: [] });
 
-ipcMain.handle('audio:getEQPresets', async () => {
-  try {
-    return await audioService.getEQPresets();
-  } catch (error) {
-    console.error('Error in audio:getEQPresets:', error);
-    return { success: false, error: error.message, presets: [] };
-  }
-});
-
-ipcMain.handle('audio:detectModels', async () => {
-  try {
-    return await audioService.detectModels();
-  } catch (error) {
-    console.error('Error in audio:detectModels:', error);
-    return { success: false, error: error.message, models: [] };
-  }
-});
+handle('audio:detectModels', async () => {
+  return await audioService.detectModels();
+}, { success: false, models: [] });
 
 // 실제 EQ/베이스를 시스템 전역에 적용하는 Equalizer APO 설치 여부 확인
-ipcMain.handle('audio:isEqualizerApoInstalled', async () => {
-  try {
-    return { installed: await audioService.detectEqualizerAPO() };
-  } catch (error) {
-    return { installed: false, error: error.message };
-  }
-});
+handle('audio:isEqualizerApoInstalled', async () => {
+  return { installed: await audioService.detectEqualizerAPO() };
+}, { installed: false });
 
 // Equalizer APO 공식 다운로드 페이지를 기본 브라우저로 연다 (URL은 고정 — 렌더러 입력 아님)
-ipcMain.handle('audio:openEqualizerApoDownload', async () => {
-  try {
-    await shell.openExternal('https://sourceforge.net/projects/equalizerapo/');
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
+handle('audio:openEqualizerApoDownload', async () => {
+  await shell.openExternal('https://sourceforge.net/projects/equalizerapo/');
+  return { success: true };
 });
 
 // [실제 동작] 공식 Equalizer APO 설치 프로그램을 직접 다운로드해 실행한다. 사용자는 표준 설치
@@ -487,637 +389,304 @@ ipcMain.handle('audio:installEqualizerApo', async () => {
 });
 
 // Gaming IPC
-ipcMain.handle('gaming:enable', async () => {
-  try {
-    return await gamingService.enable();
-  } catch (error) {
-    console.error('Error in gaming:enable:', error);
-    return { success: false, error: error.message };
-  }
+handle('gaming:enable', async () => {
+  return await gamingService.enable();
 });
 
-ipcMain.handle('gaming:disable', async () => {
-  try {
-    return await gamingService.disable();
-  } catch (error) {
-    console.error('Error in gaming:disable:', error);
-    return { success: false, error: error.message };
-  }
+handle('gaming:disable', async () => {
+  return await gamingService.disable();
 });
 
-ipcMain.handle('gaming:getStatus', async () => {
-  try {
-    return await gamingService.getStatus();
-  } catch (error) {
-    console.error('Error in gaming:getStatus:', error);
-    return { success: false, error: error.message, enabled: false };
-  }
+handle('gaming:getStatus', async () => {
+  return await gamingService.getStatus();
+}, { success: false, enabled: false });
+
+handle('gaming:enableGameMode', async (event, options) => {
+  return await gamingService.enableGameMode(options || {});
 });
 
-ipcMain.handle('gaming:enableGameMode', async (event, options) => {
-  try {
-    return await gamingService.enableGameMode(options || {});
-  } catch (error) {
-    console.error('Error in gaming:enableGameMode:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('gaming:disableGameMode', async () => {
-  try {
-    return await gamingService.disableGameMode();
-  } catch (error) {
-    console.error('Error in gaming:disableGameMode:', error);
-    return { success: false, error: error.message };
-  }
+handle('gaming:disableGameMode', async () => {
+  return await gamingService.disableGameMode();
 });
 
 // Recovery IPC
-ipcMain.handle('recovery:scan', async (event, options) => {
-  try {
-    return await recoveryService.scan(options || {});
-  } catch (error) {
-    console.error('Error in recovery:scan:', error);
-    return { success: false, error: error.message, files: [] };
-  }
-});
+handle('recovery:scan', async (event, options) => {
+  return await recoveryService.scan(options || {});
+}, { success: false, files: [] });
 
-ipcMain.handle('recovery:recover', async (event, filePath, destination) => {
-  try {
-    if (!filePath || !destination) {
-      return { success: false, error: 'Invalid file path or destination' };
-    }
-    return await recoveryService.recover(filePath, destination);
-  } catch (error) {
-    console.error('Error in recovery:recover:', error);
-    return { success: false, error: error.message };
+handle('recovery:recover', async (event, filePath, destination) => {
+  if (!filePath || !destination) {
+    return { success: false, error: 'Invalid file path or destination' };
   }
+  return await recoveryService.recover(filePath, destination);
 });
 
 // Updater IPC
-ipcMain.handle('updater:getInstalled', async () => {
-  try {
-    return await updaterService.getInstalled();
-  } catch (error) {
-    console.error('Error in updater:getInstalled:', error);
-    return { success: false, error: error.message, software: [] };
+handle('updater:getInstalled', async () => {
+  return await updaterService.getInstalled();
+}, { success: false, software: [] });
+
+handle('updater:checkUpdates', async (event, software) => {
+  if (!software || typeof software !== 'object') {
+    return { success: false, error: 'Invalid software object' };
   }
+  return await updaterService.checkUpdates(software);
 });
 
-ipcMain.handle('updater:checkUpdates', async (event, software) => {
-  try {
-    if (!software || typeof software !== 'object') {
-      return { success: false, error: 'Invalid software object' };
-    }
-    return await updaterService.checkUpdates(software);
-  } catch (error) {
-    console.error('Error in updater:checkUpdates:', error);
-    return { success: false, error: error.message };
-  }
+handle('updater:checkAllUpdates', async () => {
+  return await updaterService.checkAllUpdates();
 });
 
-ipcMain.handle('updater:checkAllUpdates', async () => {
-  try {
-    return await updaterService.checkAllUpdates();
-  } catch (error) {
-    console.error('Error in updater:checkAllUpdates:', error);
-    return { success: false, error: error.message };
+handle('updater:update', async (event, software) => {
+  if (!software || typeof software !== 'object') {
+    return { success: false, error: 'Invalid software object' };
   }
-});
-
-ipcMain.handle('updater:update', async (event, software) => {
-  try {
-    if (!software || typeof software !== 'object') {
-      return { success: false, error: 'Invalid software object' };
-    }
-    return await updaterService.update(software);
-  } catch (error) {
-    console.error('Error in updater:update:', error);
-    return { success: false, error: error.message };
-  }
+  return await updaterService.update(software);
 });
 
 // Driver IPC
-ipcMain.handle('driver:getDrivers', async () => {
-  try {
-    return await driverService.getDrivers();
-  } catch (error) {
-    console.error('Error in driver:getDrivers:', error);
-    return { success: false, error: error.message, drivers: [] };
-  }
-});
+handle('driver:getDrivers', async () => {
+  return await driverService.getDrivers();
+}, { success: false, drivers: [] });
 
-ipcMain.handle('driver:checkUpdates', async () => {
-  try {
-    return await driverService.checkUpdates();
-  } catch (error) {
-    console.error('Error in driver:checkUpdates:', error);
-    return { success: false, error: error.message, updates: [] };
-  }
-});
+handle('driver:checkUpdates', async () => {
+  return await driverService.checkUpdates();
+}, { success: false, updates: [] });
 
-ipcMain.handle('driver:update', async (event, driver) => {
-  try {
-    if (!driver || typeof driver !== 'object') {
-      return { success: false, error: 'Invalid driver object' };
-    }
-    return await driverService.update(driver);
-  } catch (error) {
-    console.error('Error in driver:update:', error);
-    return { success: false, error: error.message };
+handle('driver:update', async (event, driver) => {
+  if (!driver || typeof driver !== 'object') {
+    return { success: false, error: 'Invalid driver object' };
   }
+  return await driverService.update(driver);
 });
 
 // CPU IPC
-ipcMain.handle('cpu:getStats', async () => {
-  try {
-    return await cpuService.getStats();
-  } catch (error) {
-    console.error('Error in cpu:getStats:', error);
-    return { success: false, error: error.message };
-  }
+handle('cpu:getStats', async () => {
+  return await cpuService.getStats();
 });
 
-ipcMain.handle('cpu:optimize', async () => {
-  try {
-    return await cpuService.optimize();
-  } catch (error) {
-    console.error('Error in cpu:optimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('cpu:optimize', async () => {
+  return await cpuService.optimize();
 });
 
-ipcMain.handle('cpu:optimizeSafe', async () => {
-  try {
-    return await cpuOptimizeService.optimize();
-  } catch (error) {
-    console.error('Error in cpu:optimizeSafe:', error);
-    return { success: false, error: error.message };
-  }
+handle('cpu:optimizeSafe', async () => {
+  return await cpuOptimizeService.optimize();
 });
 
-ipcMain.handle('cpu:setPriority', async (event, pid, priority) => {
-  try {
-    if (!pid || typeof pid !== 'number' || !priority || typeof priority !== 'string') {
-      return { success: false, error: 'Invalid process ID or priority' };
-    }
-    return await cpuService.setPriority(pid, priority);
-  } catch (error) {
-    console.error('Error in cpu:setPriority:', error);
-    return { success: false, error: error.message };
+handle('cpu:setPriority', async (event, pid, priority) => {
+  if (!pid || typeof pid !== 'number' || !priority || typeof priority !== 'string') {
+    return { success: false, error: 'Invalid process ID or priority' };
   }
+  return await cpuService.setPriority(pid, priority);
 });
 
 // History IPC
-ipcMain.handle('history:getTypes', async () => {
-  try {
-    return await historyService.getTypes();
-  } catch (error) {
-    console.error('Error in history:getTypes:', error);
-    return { success: false, error: error.message, types: [] };
+handle('history:getTypes', async () => {
+  return await historyService.getTypes();
+}, { success: false, types: [] });
+
+handle('history:clear', async (event, types) => {
+  if (!Array.isArray(types)) {
+    return { success: false, error: 'Invalid types array' };
   }
+  return await historyService.clear(types);
 });
 
-ipcMain.handle('history:clear', async (event, types) => {
-  try {
-    if (!Array.isArray(types)) {
-      return { success: false, error: 'Invalid types array' };
-    }
-    return await historyService.clear(types);
-  } catch (error) {
-    console.error('Error in history:clear:', error);
-    return { success: false, error: error.message };
+handle('history:schedule', async (event, config) => {
+  if (!config || typeof config !== 'object') {
+    return { success: false, error: 'Invalid config object' };
   }
-});
-
-ipcMain.handle('history:schedule', async (event, config) => {
-  try {
-    if (!config || typeof config !== 'object') {
-      return { success: false, error: 'Invalid config object' };
-    }
-    return await historyService.schedule(config);
-  } catch (error) {
-    console.error('Error in history:schedule:', error);
-    return { success: false, error: error.message };
-  }
+  return await historyService.schedule(config);
 });
 
 // System Stats IPC
-ipcMain.handle('systemStats:getAll', async () => {
-  try {
-    // Electron 표준 IPC(structured clone)로 통계 반환.
-    // 과거 PowerShell 공유 메모리 경로는 CPU 폭주/화면 멈춤을 유발해 제거됨.
-    return await systemStatsService.getAllStats();
-  } catch (error) {
-    console.error('Error in systemStats:getAll:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-// IPC Allocator IPC
-ipcMain.handle('ipcAllocator:open', async () => {
-  try {
-    if (!ipcAllocator) {
-      // IPC Allocator가 초기화되지 않았으면 null 반환 (일반 IPC로 폴백)
-      return { success: false, error: 'IPC Allocator not initialized', fallback: true };
-    }
-    const result = await ipcAllocator.open();
-    return { ...result, stats: ipcAllocator.getStats() };
-  } catch (error) {
-    console.error('Failed to open IPC Allocator:', error);
-    return { success: false, error: error.message, fallback: true };
-  }
-});
-
-ipcMain.handle('ipcAllocator:read', async (event, offset) => {
-  try {
-    if (!ipcAllocator || !ipcAllocator.isInitialized) {
-      return { success: false, error: 'IPC Allocator not initialized' };
-    }
-    return await ipcAllocator.read(offset);
-  } catch (error) {
-    console.error('Failed to read from IPC Allocator:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('ipcAllocator:malloc', async (event, size, type) => {
-  try {
-    if (!ipcAllocator || !ipcAllocator.isInitialized) {
-      return { success: false, error: 'IPC Allocator not initialized' };
-    }
-    return await ipcAllocator.malloc(size, type || 'data');
-  } catch (error) {
-    console.error('Failed to allocate in IPC Allocator:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('ipcAllocator:write', async (event, offset, data) => {
-  try {
-    if (!ipcAllocator || !ipcAllocator.isInitialized) {
-      return { success: false, error: 'IPC Allocator not initialized' };
-    }
-    return await ipcAllocator.write(offset, data);
-  } catch (error) {
-    console.error('Failed to write to IPC Allocator:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('ipcAllocator:getStats', async () => {
-  try {
-    if (!ipcAllocator || !ipcAllocator.isInitialized) {
-      return { success: false, error: 'IPC Allocator not initialized' };
-    }
-    return { success: true, stats: ipcAllocator.getStats() };
-  } catch (error) {
-    console.error('Failed to get IPC Allocator stats:', error);
-    return { success: false, error: error.message };
-  }
+handle('systemStats:getAll', async () => {
+  // Electron 표준 IPC(structured clone)로 통계 반환.
+  // 과거 PowerShell 공유 메모리 경로는 CPU 폭주/화면 멈춤을 유발해 제거됨.
+  return await systemStatsService.getAllStats();
 });
 
 // Disk IPC
-ipcMain.handle('disk:optimize', async (event, options) => {
-  try {
-    return await diskService.optimize(options || {});
-  } catch (error) {
-    console.error('Error in disk:optimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('disk:optimize', async (event, options) => {
+  return await diskService.optimize(options || {});
 });
 
 // Network IPC
-ipcMain.handle('network:getStats', async () => {
-  try {
-    return await networkService.getStats();
-  } catch (error) {
-    console.error('Error in network:getStats:', error);
-    return { success: false, error: error.message };
-  }
+handle('network:getStats', async () => {
+  return await networkService.getStats();
 });
 
-ipcMain.handle('network:optimize', async (event, options) => {
-  try {
-    return await networkService.optimize(options || {});
-  } catch (error) {
-    console.error('Error in network:optimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('network:optimize', async (event, options) => {
+  return await networkService.optimize(options || {});
 });
 
-ipcMain.handle('network:pingTest', async (event, host) => {
-  try {
-    if (!host || typeof host !== 'string') {
-      return { success: false, error: 'Invalid host' };
-    }
-    return await networkService.pingTest(host);
-  } catch (error) {
-    console.error('Error in network:pingTest:', error);
-    return { success: false, error: error.message };
+handle('network:pingTest', async (event, host) => {
+  if (!host || typeof host !== 'string') {
+    return { success: false, error: 'Invalid host' };
   }
+  return await networkService.pingTest(host);
 });
 
 // Network Optimization API IPC (QUIC, ENet, IOCP)
-ipcMain.handle('networkOptimization:detectAPIs', async () => {
-  try {
-    return await networkOptimizationService.detectAvailableAPIs();
-  } catch (error) {
-    console.error('Error in networkOptimization:detectAPIs:', error);
-    return { success: false, error: error.message };
-  }
+handle('networkOptimization:detectAPIs', async () => {
+  return await networkOptimizationService.detectAvailableAPIs();
 });
 
-ipcMain.handle('networkOptimization:enableQUIC', async (event, options) => {
-  try {
-    return await networkOptimizationService.enableQUIC(options || {});
-  } catch (error) {
-    console.error('Error in networkOptimization:enableQUIC:', error);
-    return { success: false, error: error.message };
-  }
+handle('networkOptimization:enableQUIC', async (event, options) => {
+  return await networkOptimizationService.enableQUIC(options || {});
 });
 
-ipcMain.handle('networkOptimization:optimizeENet', async (event, options) => {
-  try {
-    return await networkOptimizationService.optimizeENet(options || {});
-  } catch (error) {
-    console.error('Error in networkOptimization:optimizeENet:', error);
-    return { success: false, error: error.message };
-  }
+handle('networkOptimization:optimizeENet', async (event, options) => {
+  return await networkOptimizationService.optimizeENet(options || {});
 });
 
-ipcMain.handle('networkOptimization:optimizeIOCP', async (event, options) => {
-  try {
-    return await networkOptimizationService.optimizeIOCP(options || {});
-  } catch (error) {
-    console.error('Error in networkOptimization:optimizeIOCP:', error);
-    return { success: false, error: error.message };
-  }
+handle('networkOptimization:optimizeIOCP', async (event, options) => {
+  return await networkOptimizationService.optimizeIOCP(options || {});
 });
 
-ipcMain.handle('networkOptimization:optimizeAll', async (event, options) => {
-  try {
-    return await networkOptimizationService.optimizeAll(options || {});
-  } catch (error) {
-    console.error('Error in networkOptimization:optimizeAll:', error);
-    return { success: false, error: error.message };
-  }
+handle('networkOptimization:optimizeAll', async (event, options) => {
+  return await networkOptimizationService.optimizeAll(options || {});
 });
 
 // GPU Optimization IPC
-ipcMain.handle('gpu:optimize', async (event, options) => {
-  try {
-    return await gpuOptimizeService.optimize(options || {});
-  } catch (error) {
-    console.error('Error in gpu:optimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('gpu:optimize', async (event, options) => {
+  return await gpuOptimizeService.optimize(options || {});
 });
 
 // Compute Optimization IPC (OpenCL, CUDA, Intel oneAPI)
-ipcMain.handle('computeOptimization:optimizeOpenCL', async (event, options) => {
-  try {
-    return await computeOptimizationService.optimizeOpenCL(options || {});
-  } catch (error) {
-    console.error('Error in computeOptimization:optimizeOpenCL:', error);
-    return { success: false, error: error.message };
-  }
+handle('computeOptimization:optimizeOpenCL', async (event, options) => {
+  return await computeOptimizationService.optimizeOpenCL(options || {});
 });
 
-ipcMain.handle('computeOptimization:optimizeCUDA', async (event, options) => {
-  try {
-    return await computeOptimizationService.optimizeCUDA(options || {});
-  } catch (error) {
-    console.error('Error in computeOptimization:optimizeCUDA:', error);
-    return { success: false, error: error.message };
-  }
+handle('computeOptimization:optimizeCUDA', async (event, options) => {
+  return await computeOptimizationService.optimizeCUDA(options || {});
 });
 
-ipcMain.handle('computeOptimization:optimizeIntelOneAPI', async (event, options) => {
-  try {
-    return await computeOptimizationService.optimizeIntelOneAPI(options || {});
-  } catch (error) {
-    console.error('Error in computeOptimization:optimizeIntelOneAPI:', error);
-    return { success: false, error: error.message };
-  }
+handle('computeOptimization:optimizeIntelOneAPI', async (event, options) => {
+  return await computeOptimizationService.optimizeIntelOneAPI(options || {});
 });
 
-ipcMain.handle('computeOptimization:optimizeAll', async (event, options) => {
-  try {
-    return await computeOptimizationService.optimizeAll(options || {});
-  } catch (error) {
-    console.error('Error in computeOptimization:optimizeAll:', error);
-    return { success: false, error: error.message };
-  }
+handle('computeOptimization:optimizeAll', async (event, options) => {
+  return await computeOptimizationService.optimizeAll(options || {});
 });
 
-ipcMain.handle('computeOptimization:detectLibraries', async () => {
-  try {
-    return await computeOptimizationService.detectLibraries();
-  } catch (error) {
-    console.error('Error in computeOptimization:detectLibraries:', error);
-    return { success: false, error: error.message, libraries: {} };
-  }
-});
+handle('computeOptimization:detectLibraries', async () => {
+  return await computeOptimizationService.detectLibraries();
+}, { success: false, libraries: {} });
 
 // Fast Ping IPC
-ipcMain.handle('fastPing:optimizeGameMode', async (event, options) => {
-  try {
-    return await fastPingService.optimizeGameMode(options || {});
-  } catch (error) {
-    console.error('Error in fastPing:optimizeGameMode:', error);
-    return { success: false, error: error.message };
-  }
+handle('fastPing:optimizeGameMode', async (event, options) => {
+  return await fastPingService.optimizeGameMode(options || {});
 });
 
-ipcMain.handle('fastPing:optimizeWorkMode', async (event, options) => {
-  try {
-    return await fastPingService.optimizeWorkMode(options || {});
-  } catch (error) {
-    console.error('Error in fastPing:optimizeWorkMode:', error);
-    return { success: false, error: error.message };
-  }
+handle('fastPing:optimizeWorkMode', async (event, options) => {
+  return await fastPingService.optimizeWorkMode(options || {});
 });
 
-ipcMain.handle('fastPing:batchOptimize', async (event, options) => {
-  try {
-    return await fastPingService.batchOptimize(options || {});
-  } catch (error) {
-    console.error('Error in fastPing:batchOptimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('fastPing:batchOptimize', async (event, options) => {
+  return await fastPingService.batchOptimize(options || {});
 });
 
-ipcMain.handle('fastPing:batchAccelerate', async (event, options) => {
-  try {
-    return await fastPingService.batchAccelerate(options || {});
-  } catch (error) {
-    console.error('Error in fastPing:batchAccelerate:', error);
-    return { success: false, error: error.message };
-  }
+handle('fastPing:batchAccelerate', async (event, options) => {
+  return await fastPingService.batchAccelerate(options || {});
 });
 
-ipcMain.handle('fastPing:pingOptimize', async (event, options) => {
-  try {
-    return await fastPingService.pingOptimize(options || {});
-  } catch (error) {
-    console.error('Error in fastPing:pingOptimize:', error);
-    return { success: false, error: error.message };
-  }
+handle('fastPing:pingOptimize', async (event, options) => {
+  return await fastPingService.pingOptimize(options || {});
 });
 
 // Delta Force Cleaner IPC
-ipcMain.handle('deltaForceCleaner:scan', async (event, dirPath) => {
-  try {
-    if (!dirPath || typeof dirPath !== 'string') {
-      return { success: false, error: 'Invalid directory path' };
-    }
-    return await deltaForceCleanerService.scan(dirPath);
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:scan:', error);
-    return { success: false, error: error.message, files: [] };
+handle('deltaForceCleaner:scan', async (event, dirPath) => {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return { success: false, error: 'Invalid directory path' };
   }
+  return await deltaForceCleanerService.scan(dirPath);
+}, { success: false, files: [] });
+
+handle('deltaForceCleaner:clean', async (event, dirPath) => {
+  if (!dirPath || typeof dirPath !== 'string') {
+    return { success: false, error: 'Invalid directory path' };
+  }
+  return await deltaForceCleanerService.clean(dirPath);
 });
 
-ipcMain.handle('deltaForceCleaner:clean', async (event, dirPath) => {
-  try {
-    if (!dirPath || typeof dirPath !== 'string') {
-      return { success: false, error: 'Invalid directory path' };
-    }
-    return await deltaForceCleanerService.clean(dirPath);
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:clean:', error);
-    return { success: false, error: error.message };
-  }
+handle('deltaForceCleaner:findDirectory', async () => {
+  return await deltaForceCleanerService.findDirectory();
 });
 
-ipcMain.handle('deltaForceCleaner:findDirectory', async () => {
-  try {
-    return await deltaForceCleanerService.findDirectory();
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:findDirectory:', error);
-    return { success: false, error: error.message };
+handle('deltaForceCleaner:getGameExplorerGames', async () => {
+  return await deltaForceCleanerService.getGameExplorerGames();
+}, { success: false, games: [] });
+
+handle('deltaForceCleaner:installGameToExplorer', async (event, gamePath, gdfPath) => {
+  if (!gamePath || !gdfPath) {
+    return { success: false, error: 'Invalid game path or GDF path' };
   }
+  return await deltaForceCleanerService.installGameToExplorer(gamePath, gdfPath);
 });
 
-ipcMain.handle('deltaForceCleaner:getGameExplorerGames', async () => {
-  try {
-    return await deltaForceCleanerService.getGameExplorerGames();
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:getGameExplorerGames:', error);
-    return { success: false, error: error.message, games: [] };
+handle('deltaForceCleaner:uninstallGameFromExplorer', async (event, instanceID) => {
+  if (!instanceID || typeof instanceID !== 'string') {
+    return { success: false, error: 'Invalid instance ID' };
   }
+  return await deltaForceCleanerService.uninstallGameFromExplorer(instanceID);
 });
 
-ipcMain.handle('deltaForceCleaner:installGameToExplorer', async (event, gamePath, gdfPath) => {
-  try {
-    if (!gamePath || !gdfPath) {
-      return { success: false, error: 'Invalid game path or GDF path' };
-    }
-    return await deltaForceCleanerService.installGameToExplorer(gamePath, gdfPath);
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:installGameToExplorer:', error);
-    return { success: false, error: error.message };
-  }
+handle('deltaForceCleaner:optimizeWithWindowsAPI', async (event, options) => {
+  return await deltaForceCleanerService.optimizeWithWindowsAPI(options || {});
 });
 
-ipcMain.handle('deltaForceCleaner:uninstallGameFromExplorer', async (event, instanceID) => {
-  try {
-    if (!instanceID || typeof instanceID !== 'string') {
-      return { success: false, error: 'Invalid instance ID' };
-    }
-    return await deltaForceCleanerService.uninstallGameFromExplorer(instanceID);
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:uninstallGameFromExplorer:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('deltaForceCleaner:optimizeWithWindowsAPI', async (event, options) => {
-  try {
-    return await deltaForceCleanerService.optimizeWithWindowsAPI(options || {});
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:optimizeWithWindowsAPI:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('deltaForceCleaner:manageApplicationsAndServices', async (event, options) => {
-  try {
-    return await deltaForceCleanerService.manageApplicationsAndServices(options || {});
-  } catch (error) {
-    console.error('Error in deltaForceCleaner:manageApplicationsAndServices:', error);
-    return { success: false, error: error.message };
-  }
+handle('deltaForceCleaner:manageApplicationsAndServices', async (event, options) => {
+  return await deltaForceCleanerService.manageApplicationsAndServices(options || {});
 });
 
 // Permissions IPC
-ipcMain.handle('permissions:isAdmin', async () => {
-  try {
-    return { success: true, isAdmin: await platformService.isAdmin() };
-  } catch (error) {
-    console.error('Error in permissions:isAdmin:', error);
-    return { success: false, error: error.message, isAdmin: false };
-  }
-});
+handle('permissions:isAdmin', async () => {
+  return { success: true, isAdmin: await platformService.isAdmin() };
+}, { success: false, isAdmin: false });
 
-ipcMain.handle('platform:getOSInfo', async () => {
-  try {
-    return { success: true, osInfo: platformService.getOSInfo() };
-  } catch (error) {
-    console.error('Error in platform:getOSInfo:', error);
-    return { success: false, error: error.message };
-  }
+handle('platform:getOSInfo', async () => {
+  return { success: true, osInfo: platformService.getOSInfo() };
 });
-ipcMain.handle('permissions:requestAdmin', async () => {
-  try {
-    // 현재 관리자 권한 상태 확인
-    const isAdmin = await platformService.isAdmin();
-    
-    if (isAdmin) {
-      return {
-        success: true,
-        message: '관리자 권한이 활성화되어 있습니다.',
-        isAdmin: true,
-      };
-    }
-    
-    // 관리자 권한이 없으면 상태만 반환 (앱 재시작 없이)
-    // 실제 관리자 권한이 필요한 작업은 별도 프로세스로 실행
+handle('permissions:requestAdmin', async () => {
+  // 현재 관리자 권한 상태 확인
+  const isAdmin = await platformService.isAdmin();
+
+  if (isAdmin) {
     return {
-      success: false,
-      message: '관리자 권한이 필요합니다. 관리자 권한이 필요한 작업은 별도로 실행됩니다.',
-      isAdmin: false,
-      requiresElevation: true,
+      success: true,
+      message: '관리자 권한이 활성화되어 있습니다.',
+      isAdmin: true,
     };
-  } catch (error) {
-    console.error('Error in permissions:requestAdmin:', error);
-    return { success: false, error: error.message, isAdmin: false };
   }
-});
 
-ipcMain.handle('permissions:confirmAction', async (event, action, details) => {
-  try {
-    if (!mainWindow) {
-      return { confirmed: false, error: 'Main window not available' };
-    }
-    if (!action || typeof action !== 'string') {
-      return { confirmed: false, error: 'Invalid action' };
-    }
-    const result = await dialog.showMessageBox(mainWindow, {
-      type: 'question',
-      buttons: ['취소', '확인'],
-      defaultId: 1,
-      title: '작업 확인',
-      message: action,
-      detail: details || '',
-    });
-    return { confirmed: result.response === 1 };
-  } catch (error) {
-    console.error('Error in permissions:confirmAction:', error);
-    return { confirmed: false, error: error.message };
+  // 관리자 권한이 없으면 상태만 반환 (앱 재시작 없이)
+  // 실제 관리자 권한이 필요한 작업은 별도 프로세스로 실행
+  return {
+    success: false,
+    message: '관리자 권한이 필요합니다. 관리자 권한이 필요한 작업은 별도로 실행됩니다.',
+    isAdmin: false,
+    requiresElevation: true,
+  };
+}, { success: false, isAdmin: false });
+
+handle('permissions:confirmAction', async (event, action, details) => {
+  if (!mainWindow) {
+    return { confirmed: false, error: 'Main window not available' };
   }
-});
+  if (!action || typeof action !== 'string') {
+    return { confirmed: false, error: 'Invalid action' };
+  }
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ['취소', '확인'],
+    defaultId: 1,
+    title: '작업 확인',
+    message: action,
+    detail: details || '',
+  });
+  return { confirmed: result.response === 1 };
+}, { confirmed: false });
 
 // Window controls IPC
 ipcMain.handle('window:minimize', () => {

@@ -1,8 +1,8 @@
 .windows-boost {
   padding: 24px;
   min-height: 100%;
-  color: #e0e0e0;
-  background-color: #1A1A1E;
+  color: var(--text-primary);
+  background-color: var(--bg-surface);
   display: flex;
   flex-direction: column;
 }
@@ -20,16 +20,16 @@
 
 .windows-boost-description {
   font-size: 14px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   margin: 0;
 }
 
 .windows-boost-card {
-  background-color: #14161B;
+  background-color: var(--bg-app);
   border-radius: 8px;
   padding: 24px;
   margin-bottom: 16px;
-  border: 1px solid #2a2a2a;
+  border: 1px solid var(--bg-elevated);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }
 
@@ -58,9 +58,9 @@
 
 .toggle-button {
   padding: 8px 20px;
-  background-color: #2a2a2a;
-  color: #b0b0b0;
-  border: 1px solid #3a3a3a;
+  background-color: var(--bg-elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
@@ -71,18 +71,18 @@
 }
 
 .toggle-button.active {
-  background-color: #FF003F;
+  background-color: var(--accent);
   color: white;
-  border-color: #FF003F;
+  border-color: var(--accent);
 }
 
 .toggle-button:hover:not(:disabled) {
-  background-color: #3a3a3a;
+  background-color: var(--border);
   transform: translateY(-1px);
 }
 
 .toggle-button.active:hover:not(:disabled) {
-  background-color: #ff1a4d;
+  background-color: var(--accent-strong);
 }
 
 .toggle-button:disabled {
@@ -92,7 +92,7 @@
 
 .toggle-description {
   font-size: 14px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -112,7 +112,7 @@
 
 .setting-description {
   font-size: 14px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   line-height: 1.5;
   margin-bottom: 8px;
 }
@@ -140,7 +140,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background-color: #FF003F;
+  background-color: var(--accent);
   color: white;
 }
 
@@ -155,7 +155,7 @@
 }
 
 .apply-button {
-  background-color: #FF003F;
+  background-color: var(--accent);
   color: white;
   width: auto;
   min-width: 120px;
@@ -169,7 +169,7 @@
 }
 
 .optimize-button {
-  background-color: #FF003F;
+  background-color: var(--accent);
   color: white;
 }
 
@@ -180,7 +180,7 @@
 
 .loading-message {
   text-align: center;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   font-size: 14px;
   padding: 16px;
 }
@@ -198,9 +198,9 @@
 
 .game-item {
   padding: 12px 16px;
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--overlay-weak);
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--overlay);
   margin-bottom: 8px;
 }
 
@@ -218,7 +218,7 @@
 
 .game-id {
   font-size: 12px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   font-family: 'Courier New', monospace;
 }
 
@@ -233,13 +233,13 @@
 .result-message.success {
   background-color: rgba(46, 204, 113, 0.1);
   border: 1px solid rgba(46, 204, 113, 0.3);
-  color: #2ecc71;
+  color: var(--success);
 }
 
 .result-message.error {
   background-color: rgba(231, 76, 60, 0.1);
   border: 1px solid rgba(231, 76, 60, 0.3);
-  color: #e74c3c;
+  color: var(--error);
 }
 
 .optimization-list {
@@ -256,12 +256,12 @@
   padding: 12px;
   background-color: rgba(255, 255, 255, 0.02);
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--overlay-weak);
 }
 
 .optimization-icon {
   font-size: 18px;
-  color: #2ecc71;
+  color: var(--success);
   flex-shrink: 0;
   margin-top: 2px;
 }
@@ -281,7 +281,7 @@
 
 .optimization-description {
   font-size: 12px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
@@ -294,7 +294,7 @@
 
 .applying-message {
   text-align: center;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   font-size: 16px;
   font-weight: 500;
 }
@@ -306,7 +306,7 @@
 .progress-bar {
   width: 100%;
   height: 8px;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--overlay);
   border-radius: 4px;
   overflow: hidden;
   position: relative;
@@ -315,7 +315,7 @@
 .progress-bar-fill {
   height: 100%;
   width: 100%;
-  background: linear-gradient(90deg, #FF003F 0%, #ff1a4d 50%, #FF003F 100%);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--accent-strong) 50%, var(--accent) 100%);
   background-size: 200% 100%;
   animation: progress-animation 1.5s ease-in-out infinite;
   border-radius: 4px;
@@ -342,7 +342,7 @@
 
 .success-icon {
   font-size: 48px;
-  color: #2ecc71;
+  color: var(--success);
   margin-bottom: 8px;
 }
 
@@ -355,13 +355,13 @@
 .success-title {
   font-size: 18px;
   font-weight: 600;
-  color: #2ecc71;
+  color: var(--success);
   margin: 0;
 }
 
 .success-description {
   font-size: 14px;
-  color: #b0b0b0;
+  color: var(--text-secondary);
   margin: 0;
   line-height: 1.5;
 }
@@ -371,7 +371,7 @@
   background-color: rgba(231, 76, 60, 0.1);
   border: 1px solid rgba(231, 76, 60, 0.3);
   border-radius: 8px;
-  color: #e74c3c;
+  color: var(--error);
   font-size: 14px;
 }
 
@@ -391,11 +391,11 @@
 .operation-item.success {
   background-color: rgba(46, 204, 113, 0.1);
   border: 1px solid rgba(46, 204, 113, 0.2);
-  color: #2ecc71;
+  color: var(--success);
 }
 
 .operation-item.error {
   background-color: rgba(231, 76, 60, 0.1);
   border: 1px solid rgba(231, 76, 60, 0.2);
-  color: #e74c3c;
+  color: var(--error);
 }

@@ -10,6 +10,7 @@
 
 const Registry = require('winreg');
 const { execAsync, execFileAsync } = require('./_exec');
+const { parseWingetUpgradeTable } = require('./wingetParse');
 
 async function getInstalled() {
   const software = [];
@@ -165,30 +166,6 @@ async function getInstalled() {
 // 뒤에서부터(Source/Available/Version/Id) 고정 열을 떼고 나머지를 Name으로 합친다.
 let _upgradeCache = { at: 0, list: null };
 const UPGRADE_CACHE_MS = 60 * 1000;
-
-function parseWingetUpgradeTable(stdout) {
-  const lines = String(stdout).split(/\r?\n/);
-  const sepIndex = lines.findIndex((l) => /^-{5,}/.test(l.trim()));
-  if (sepIndex < 0) return [];
-  const rows = [];
-  for (let i = sepIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line || !line.trim()) continue;
-    // 진행률/요약 꼬리 줄(예: "N upgrades available.") 제외
-    if (/available|upgrad|business|package/i.test(line) && !/\S\s{2,}\S/.test(line)) continue;
-    const cols = line.trim().split(/\s{2,}/);
-    if (cols.length < 4) continue;
-    const source = cols[cols.length - 1];
-    const available = cols[cols.length - 2];
-    const version = cols[cols.length - 3];
-    const id = cols[cols.length - 4];
-    const name = cols.slice(0, cols.length - 4).join(' ') || id;
-    // 버전 칸이 실제 버전처럼 보이는지 최소 검증(숫자 포함)
-    if (!/\d/.test(version) || !/\d|unknown/i.test(available)) continue;
-    rows.push({ name, id, currentVersion: version, latestVersion: available, source });
-  }
-  return rows;
-}
 
 async function checkAllUpdates(force = false) {
   const now = Date.now();

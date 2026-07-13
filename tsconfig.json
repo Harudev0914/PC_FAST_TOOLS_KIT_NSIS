@@ -1,0 +1,25 @@
+{
+  // TypeScript 점진 도입(gradual adoption). 전체 마이그레이션 대신, JSDoc + `// @ts-check`가
+  // 붙은 순수 모듈만 타입 검사한다. `npm run typecheck`로 검증(빌드에는 영향 없음, noEmit).
+  // 새 파일/리팩터링 시 상단에 `// @ts-check`를 추가하면 점진적으로 커버리지를 넓힐 수 있다.
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2021", "DOM"],
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    // 점진 도입 단계에서는 non-strict로 둔다: 실제 오류(오타·잘못된 인자·undefined 접근)는
+    // 잡되, 기존 JS에 전면 타입 주석을 강제하는 noImplicitAny 소음은 피한다.
+    "strict": false,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"]
+  },
+  "include": [
+    "electron/services/wingetParse.js",
+    "electron/services/cache.js",
+    "electron/services/_exec.js"
+  ]
+}

@@ -5,6 +5,7 @@ import WindowsBoost from './WindowsBoost';
 import DeltaForceCleaner from './DeltaForceCleaner';
 import SoundBoost from './SoundBoost';
 import GameMode from './GameMode';
+import SoftwareUpdater from './SoftwareUpdater';
 import '../styles/MainPage.css';
 
 const menuItems = [
@@ -13,6 +14,7 @@ const menuItems = [
   { id: 'sound', label: 'Sound Boost', icon: '' },
   { id: 'slim', label: 'Delta Force Cleaner', icon: '' },
   { id: 'optiwin', label: 'Game Mode', icon: '' },
+  { id: 'updates', label: 'Updates', icon: '' },
 ];
 
 function MainPage() {
@@ -399,7 +401,8 @@ function MainPage() {
           {selectedMenu === 'sound' && <SoundBoost />}
           {selectedMenu === 'slim' && <DeltaForceCleaner />}
           {selectedMenu === 'optiwin' && <GameMode />}
-          {selectedMenu !== 'smart' && selectedMenu !== 'windowsboost' && selectedMenu !== 'sound' && selectedMenu !== 'slim' && selectedMenu !== 'optiwin' && (
+          {selectedMenu === 'updates' && <SoftwareUpdater />}
+          {selectedMenu !== 'smart' && selectedMenu !== 'windowsboost' && selectedMenu !== 'sound' && selectedMenu !== 'slim' && selectedMenu !== 'optiwin' && selectedMenu !== 'updates' && (
             <div className="coming-soon">
               <div className="coming-soon-icon">🚧</div>
               <h2>준비 중입니다</h2>
