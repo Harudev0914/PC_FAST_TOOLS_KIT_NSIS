@@ -8,9 +8,7 @@
 // 이 모듈은 플랫폼별(Windows/Linux/macOS) 기능을 통합하여 제공하는 플랫폼 추상화 레이어
 
 const si = require('systeminformation');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+const { execAsync } = require('./_exec');
 
 async function getOSInfo() {
   try {

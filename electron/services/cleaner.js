@@ -25,9 +25,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+const { execAsync } = require('./_exec');
 
 const Registry = require('winreg');
 

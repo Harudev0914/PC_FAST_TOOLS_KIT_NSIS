@@ -13,7 +13,10 @@
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && node electron/launch.cjs\"",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win",
-    "pack": "npm run build && electron-builder --dir"
+    "pack": "npm run build && electron-builder --dir",
+    "lint": "eslint . --ext .js,.jsx,.cjs",
+    "lint:fix": "eslint . --ext .js,.jsx,.cjs --fix",
+    "format": "prettier --write \"{src,electron}/**/*.{js,jsx,cjs,css}\""
   },
   "keywords": [
     "pc-optimizer",
@@ -26,7 +29,6 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0",
-    "recharts": "^2.10.3",
     "systeminformation": "^5.30.3",
     "winreg": "^1.2.5"
   },
@@ -35,6 +37,10 @@
     "concurrently": "^8.2.2",
     "electron": "^28.0.0",
     "electron-builder": "^24.9.1",
+    "eslint": "^8.57.0",
+    "eslint-plugin-react": "^7.34.1",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "prettier": "^3.3.2",
     "vite": "^5.0.8",
     "wait-on": "^7.2.0"
   }

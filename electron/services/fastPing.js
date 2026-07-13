@@ -10,12 +10,8 @@
 //   .set() - TCP/IP 레지스트리 값 설정 (TcpAckFrequency, TcpNoDelay, TcpWindowSize 등)
 // 이 모듈은 게임 모드 최적화를 수행하며, Fast Ping 기능을 포함하여 네트워크 지연 시간을 최소화
 
-const { exec } = require('child_process');
-const { promisify } = require('util');
 const Registry = require('winreg');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync, withTimeout: timeout } = require('./_exec');
 
 // @fastPing.js (6-35)
 // optimizeGameMode 함수: 게임 모드 최적화 수행
@@ -53,12 +49,6 @@ async function optimizeGameMode(options = {}) {
     adminGranted: false,
   };
 
-  const timeout = (promise, ms) => {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms))
-    ]);
-  };
 
   const permissionsService = require('./permissions');
   const isAdmin = await permissionsService.isAdmin();

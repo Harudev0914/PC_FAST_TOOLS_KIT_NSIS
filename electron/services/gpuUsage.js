@@ -8,12 +8,7 @@
 // - util: 유틸리티 함수 제공. util.promisify()로 콜백 기반 함수를 Promise로 변환
 // typeperf 사용: Windows Performance Monitor 명령어로 GPU 성능 카운터 조회
 
-const { exec } = require('child_process');
-const util = require('util');
-const { promisify } = require('util');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync } = require('./_exec');
 
 async function getIntelGPUUsage() {
   try {

@@ -22,6 +22,8 @@
             return '';
           }
         });
+        // [perf] devtools 감지 폴링. 매초 console.log로 element를 찍던 것을 2초로 완화해
+        // 상시 CPU/콘솔 부하를 줄인다(감지 목적엔 충분).
         setInterval(() => {
           devtools = false;
           console.log(element);
@@ -29,7 +31,7 @@
             document.body.innerHTML = '<h1 style="text-align:center;padding:50px;color:#e74c3c;">보안 정책에 의해 접근이 제한되었습니다.</h1>';
             window.location.reload();
           }
-        }, 1000);
+        }, 2000);
         
         document.addEventListener('keydown', (e) => {
           if (e.key === 'F12' || 

@@ -12,38 +12,8 @@
 
 const si = require('systeminformation');
 const Registry = require('winreg');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
-// 1MB 버퍼 초과 크래시를 방지한다. (기존 Promise.race 헬퍼는 자식 프로세스를 죽이지
-// 못해 백그라운드에 누수됐음.) 개별 호출이 옵션을 넘기면 그 값이 우선한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
 const permissionsService = require('./permissions');
-
-// @cpu.js (14-19)
-// timeout 함수: Promise에 타임아웃을 추가하는 유틸리티 함수
-// 변수: promise - 타임아웃을 적용할 Promise, ms - 타임아웃 시간(밀리초)
-// Promise.race를 사용하여 원본 Promise와 타임아웃 Promise 중 먼저 완료되는 것을 반환
-// 사용 예: await timeout(si.processes(), 3000) - 3초 내에 프로세스 목록을 가져오지 못하면 타임아웃
-
-const timeout = (promise, ms) => {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms))
-  ]);
-};
-
-// @cpu.js (21-24)
-// executePowerShellWithEncoding 함수: UTF-8 인코딩으로 PowerShell 명령 실행
-// 변수: command - 실행할 PowerShell 명령어 문자열
-// chcp 65001로 코드 페이지를 UTF-8로 설정하여 한글 출력 문제 해결
-// 사용 예: executePowerShellWithEncoding('Stop-Service -Name "SysMain"') - 서비스 중지
-
-const executePowerShellWithEncoding = (command) => {
-  const encodedCommand = `chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${command}`;
-  return execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${encodedCommand}"`, { encoding: 'utf8' });
-};
+const { execAsync, executePowerShell: executePowerShellWithEncoding, withTimeout: timeout } = require('./_exec');
 
 // @cpu.js (26-62)
 // getStats 함수: CPU 통계 정보 조회

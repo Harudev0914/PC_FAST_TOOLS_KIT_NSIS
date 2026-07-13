@@ -2830,4 +2830,6 @@ function SmartOptimization() {
   );
 }
 
-export default SmartOptimization;
+// [perf] 최대 규모(2800+줄) 패널. props가 없으므로 React.memo로 감싸 MainPage의
+// 100ms 진행률 폴링에 의한 부모 리렌더가 이 무거운 트리로 전파되지 않게 한다.
+export default React.memo(SmartOptimization);

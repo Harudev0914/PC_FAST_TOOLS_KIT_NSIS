@@ -401,4 +401,5 @@ function SoundBoost() {
   );
 }
 
-export default SoundBoost;
+// [perf] props가 없는 패널 — React.memo로 부모(MainPage) 리렌더 전파를 차단한다.
+export default React.memo(SoundBoost);

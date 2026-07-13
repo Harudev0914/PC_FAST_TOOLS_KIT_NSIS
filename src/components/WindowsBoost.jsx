@@ -189,4 +189,6 @@ function WindowsBoost() {
   );
 }
 
-export default WindowsBoost;
+// [perf] MainPage 부모가 진행률 폴링으로 자주 리렌더되지만 이 패널은 props가 없어
+// React.memo로 감싸면 자신의 내부 상태 변화에만 리렌더된다(부모 리렌더 전파 차단).
+export default React.memo(WindowsBoost);

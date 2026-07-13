@@ -14,11 +14,7 @@
 const si = require('systeminformation');
 const gpuUsageService = require('./gpuUsage');
 const gpuDetailsService = require('./gpuDetails');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync } = require('./_exec');
 
 // [최적화] si.graphics()는 GPU/디스플레이 "하드웨어" 정보를 반환하며 Windows에서
 // 내부적으로 wmic/PowerShell을 호출해 매우 느리다(수백 ms~1s). 하드웨어 구성은

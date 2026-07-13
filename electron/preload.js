@@ -75,6 +75,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updater: {
     getInstalled: () => ipcRenderer.invoke('updater:getInstalled'),
     checkUpdates: (software) => ipcRenderer.invoke('updater:checkUpdates', software),
+    checkAllUpdates: () => ipcRenderer.invoke('updater:checkAllUpdates'),
     update: (software) => ipcRenderer.invoke('updater:update', software),
   },
 

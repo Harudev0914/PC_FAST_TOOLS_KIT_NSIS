@@ -7,11 +7,7 @@
 // 이 모듈은 시스템에 영향을 최소화하는 안전한 CPU 최적화 기능을 제공
 // cleanmgr 사용: Windows 디스크 정리 도구로 시스템 캐시 정리 (관리자 권한 필요할 수 있음)
 
-const { exec } = require('child_process');
-const { promisify } = require('util');
-// [고도화] cleanmgr가 UI를 띄우고 멈추는 것 등을 막기 위해 기본 타임아웃(2분)·버퍼(20MB) 적용.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync } = require('./_exec');
 
 async function optimize() {
   const results = {

@@ -5,11 +5,16 @@ yarn.lock
 
 # Build outputs
 dist/
+dist-installer/
 build/
 *.exe
 *.dmg
 *.deb
 *.rpm
+
+# Local scratch / manual test pages
+test-simple.html
+public/test.html
 
 # IDE
 .vscode/

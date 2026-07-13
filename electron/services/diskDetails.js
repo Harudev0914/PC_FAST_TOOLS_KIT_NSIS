@@ -14,9 +14,7 @@
 //   - diskIO: 디스크 I/O 통계 (readIO, writeIO, readBytes, writeBytes 등)
 
 const si = require('systeminformation');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
+const { execAsync: execPromise } = require('./_exec');
 
 async function getDiskDetails(diskLetter = 'C:') {
   try {

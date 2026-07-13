@@ -61,6 +61,53 @@
   font-display: swap;
 }
 
+/*
+ * Design tokens — single source of truth for the dark theme.
+ * Prior to this the codebase had 73 hard-coded hex colors across 12 stylesheets
+ * and only 6 CSS variables (scoped to one component). New/refactored styles should
+ * reference these tokens (var(--…)) instead of literal hex so a theme change is one edit.
+ */
+:root {
+  /* Surfaces */
+  --bg-app: #14161b;
+  --bg-surface: #1a1a1e;
+  --bg-elevated: #2a2a2a;
+  --bg-module: #191c22;
+
+  /* Borders / dividers */
+  --border: #3a3a3a;
+  --border-subtle: #262d36;
+
+  /* Text */
+  --text-primary: #e0e0e0;
+  --text-secondary: #b0b0b0;
+  --text-muted: #7e8087;
+
+  /* Brand + semantic accents */
+  --accent: #ff003f;
+  --accent-strong: #ff1a4d;
+  --accent-cyan: #35e0d0;
+  --success: #2ecc71;
+  --error: #e74c3c;
+  --info: #667eea;
+
+  /* Overlays */
+  --overlay-weak: rgba(255, 255, 255, 0.05);
+  --overlay: rgba(255, 255, 255, 0.1);
+
+  /* Spacing scale */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+}
+
 * {
   margin: 0;
   padding: 0;

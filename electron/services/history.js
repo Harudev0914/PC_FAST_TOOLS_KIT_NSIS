@@ -20,11 +20,7 @@
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기·버퍼 초과 크래시를 방지한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync } = require('./_exec');
 
 const BROWSER_PATHS = {
   chrome: {

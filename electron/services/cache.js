@@ -10,6 +10,10 @@
 //       - dynamic: 1초 (1000 밀리초) - 동적 데이터는 1초간 유효
 // 이 모듈은 메모리 내 캐시를 제공하여 반복적인 시스템 정보 조회 시 성능 최적화
 
+// [고도화] 타임스탬프를 캐시 종류별 단일 값이 아니라 "키별"로 관리한다.
+// 기존 구조는 dynamic 타임스탬프가 하나뿐이라 cpuUsage를 저장하면 networkStats 등
+// 다른 키의 신선도 기준까지 리셋되는 버그가 있었다. 또한 dynamic TTL(1초)이 UI 폴링
+// 주기(2초)보다 짧아 캐시가 사실상 매번 미스였다 → 폴링 주기 이상으로 올려 실효화.
 const cache = {
   static: {
     cpu: null,
@@ -24,14 +28,15 @@ const cache = {
     diskUsage: null,
     gpuUsage: null,
     networkStats: null,
+    processCount: null,
   },
   timestamps: {
-    static: 0,
-    dynamic: 0,
+    static: {},
+    dynamic: {},
   },
   ttl: {
     static: 5 * 60 * 1000,
-    dynamic: 1000,
+    dynamic: 2000,
   },
 };
 
@@ -48,7 +53,8 @@ const cache = {
 
 function getStaticCache(key) {
   const now = Date.now();
-  if (cache.static[key] && (now - cache.timestamps.static) < cache.ttl.static) {
+  const ts = cache.timestamps.static[key] || 0;
+  if (cache.static[key] && (now - ts) < cache.ttl.static) {
     return cache.static[key];
   }
   return null;
@@ -60,7 +66,7 @@ function getStaticCache(key) {
 
 function setStaticCache(key, value) {
   cache.static[key] = value;
-  cache.timestamps.static = Date.now();
+  cache.timestamps.static[key] = Date.now();
 }
 
 // getDynamicCache 함수: 동적 데이터 캐시 조회
@@ -70,7 +76,8 @@ function setStaticCache(key, value) {
 
 function getDynamicCache(key) {
   const now = Date.now();
-  if (cache.dynamic[key] && (now - cache.timestamps.dynamic) < cache.ttl.dynamic) {
+  const ts = cache.timestamps.dynamic[key] || 0;
+  if (cache.dynamic[key] && (now - ts) < cache.ttl.dynamic) {
     return cache.dynamic[key];
   }
   return null;
@@ -82,7 +89,7 @@ function getDynamicCache(key) {
 
 function setDynamicCache(key, value) {
   cache.dynamic[key] = value;
-  cache.timestamps.dynamic = Date.now();
+  cache.timestamps.dynamic[key] = Date.now();
 }
 
 function clearCache() {
@@ -99,18 +106,21 @@ function clearCache() {
     diskUsage: null,
     gpuUsage: null,
     networkStats: null,
+    processCount: null,
   };
   cache.timestamps = {
-    static: 0,
-    dynamic: 0,
+    static: {},
+    dynamic: {},
   };
 }
 
 function clearCacheKey(key, type = 'static') {
   if (type === 'static') {
     cache.static[key] = null;
+    delete cache.timestamps.static[key];
   } else {
     cache.dynamic[key] = null;
+    delete cache.timestamps.dynamic[key];
   }
 }
 

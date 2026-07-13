@@ -576,6 +576,15 @@ ipcMain.handle('updater:checkUpdates', async (event, software) => {
   }
 });
 
+ipcMain.handle('updater:checkAllUpdates', async () => {
+  try {
+    return await updaterService.checkAllUpdates();
+  } catch (error) {
+    console.error('Error in updater:checkAllUpdates:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle('updater:update', async (event, software) => {
   try {
     if (!software || typeof software !== 'object') {

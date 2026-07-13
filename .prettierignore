@@ -1,0 +1,6 @@
+dist/
+dist-installer/
+build/
+node_modules/
+*.min.js
+electron/loading.html

@@ -20,9 +20,7 @@
 
 const fs = require('fs').promises;
 const path = require('path');
-const { exec } = require('child_process');
-const { promisify } = require('util');
-const execAsync = promisify(exec);
+const { execAsync } = require('./_exec');
 
 const FILE_SIGNATURES = {
   jpg: [0xFF, 0xD8, 0xFF],

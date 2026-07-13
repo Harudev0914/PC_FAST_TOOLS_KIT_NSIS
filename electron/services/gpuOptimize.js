@@ -14,13 +14,8 @@
 // 4. GPU 메모리 관리
 // 5. GPU 클럭/전압 최적화 (NVIDIA/AMD/Intel별)
 
-const { exec } = require('child_process');
-const { promisify } = require('util');
 const Registry = require('winreg');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
-// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
+const { execAsync, withTimeout: timeout } = require('./_exec');
 const permissionsService = require('./permissions');
 
 async function optimize(options = {}) {
@@ -37,14 +32,6 @@ async function optimize(options = {}) {
     clockOptimized: false,
     requiresAdmin: false,
     adminGranted: false,
-  };
-
-  // 타임아웃 헬퍼 함수
-  const timeout = (promise, ms) => {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms))
-    ]);
   };
 
   // 관리자 권한 확인

@@ -18,8 +18,7 @@
 
 const os = require('os');
 const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
+const { execAsync: execPromise } = require('./_exec');
 const networkStatsService = require('./networkStats');
 const gpuStatsService = require('./gpuStats');
 const memoryDetailsService = require('./memoryDetails');
@@ -419,6 +418,12 @@ async function getCPUDetails() {
 
 async function getProcessCount() {
   return new Promise((resolve) => {
+    // [perf] 폴링당 tasklist + wmic 두 프로세스를 스폰(각 수백 ms). 2초 동적 캐시로 완화.
+    const cached = cacheService.getDynamicCache('processCount');
+    if (cached !== null) {
+      resolve(cached);
+      return;
+    }
     if (process.platform === 'win32') {
       exec('tasklist /FO CSV /NH', { encoding: 'utf8' }, (error, stdout) => {
         if (error) {
@@ -438,11 +443,13 @@ async function getProcessCount() {
               if (handleMatch) handles += parseInt(handleMatch[1]);
             });
           }
-          resolve({
+          const value = {
             processes: lines.length,
             threads: threads || lines.length * 10,
             handles: handles || lines.length * 100,
-          });
+          };
+          cacheService.setDynamicCache('processCount', value);
+          resolve(value);
         });
       });
     } else if (process.platform === 'linux') {
@@ -633,8 +640,13 @@ async function getDiskUsage() {
 }
 
 async function getGPUUsage() {
+  // [perf] GPU 사용률 조회는 nvidia-smi/typeperf/PowerShell을 스폰해 폴링당 가장 비싼 축.
+  // 2초 동적 캐시로 폴링 주기 내 중복 스폰을 제거한다(getCPUUsage와 동일 패턴).
+  const cached = cacheService.getDynamicCache('gpuUsage');
+  if (cached !== null) return cached;
   try {
     const gpus = await gpuStatsService.getDetailedGPUInfo();
+    cacheService.setDynamicCache('gpuUsage', gpus);
     return gpus;
   } catch (error) {
     console.error('Error getting GPU info:', error);
@@ -644,6 +656,12 @@ async function getGPUUsage() {
 
 async function getNetworkStats() {
   return new Promise(async (resolve) => {
+    // [perf] 어댑터 통계/Wi-Fi 조회는 WMI/netsh를 스폰함 → 2초 동적 캐시로 완화.
+    const cached = cacheService.getDynamicCache('networkStats');
+    if (cached !== null) {
+      resolve(cached);
+      return;
+    }
     try {
       const adapterStats = await networkStatsService.getNetworkAdapterStats();
       const wifiInfo = await networkStatsService.getWiFiInfo();
@@ -671,8 +689,10 @@ async function getNetworkStats() {
         wifi.ssid = wifiInfo.ssid || 'Unknown';
         wifi.signalStrength = wifiInfo.signalStrength || 0;
       }
-      
-      resolve({ ethernet, wifi });
+
+      const value = { ethernet, wifi };
+      cacheService.setDynamicCache('networkStats', value);
+      resolve(value);
     } catch (error) {
       console.error('Error getting network stats:', error);
       resolve({

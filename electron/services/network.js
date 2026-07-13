@@ -8,15 +8,8 @@
 // - winreg (Registry): Windows 레지스트리 접근. 네트워크 어댑터 설정, TCP/IP 파라미터 변경에 사용
 //   사용 예: new Registry({ hive: Registry.HKLM, key }) - 레지스트리 키 생성, .set() - 값 설정
 
-const { exec, execFile } = require('child_process');
-const { promisify } = require('util');
 const Registry = require('winreg');
-// [고도화] 모든 exec 호출에 기본 타임아웃(2분)·버퍼(20MB)를 적용해 무한 대기와
-// 1MB 버퍼 초과 크래시를 방지한다. 개별 호출이 옵션을 넘기면 그 값이 우선한다.
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
-// [보안] 사용자 입력(host 등)을 셸 없이 실행하기 위한 execFile 래퍼
-const execFileAsync = promisify(execFile);
+const { execAsync, execFileAsync, withTimeout: timeout } = require('./_exec');
 
 // @network.js (12-39)
 // getStats 함수: 네트워크 통계 정보 조회
@@ -138,13 +131,6 @@ async function optimize(options = {}) {
     adapterPriorityOptimized: false,
     requiresAdmin: false,
     adminGranted: false,
-  };
-
-  const timeout = (promise, ms) => {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), ms))
-    ]);
   };
 
   const permissionsService = require('./permissions');

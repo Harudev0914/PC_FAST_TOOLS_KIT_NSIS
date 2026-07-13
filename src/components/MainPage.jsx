@@ -27,16 +27,19 @@ function MainPage() {
   const actionButtonRef = useRef(null);
 
   useEffect(() => {
+    // [perf] 진행률 오버레이 폴링. 200ms면 프로그레스 바 갱신엔 충분히 부드럽고
+    // 유휴 시(비활성)에는 이미 null이면 setState를 건너뛰어 불필요한 리렌더를 없앤다.
     const checkGlobalProgress = () => {
-      if (window.__globalOptimizationProgress && window.__globalOptimizationProgress.active) {
-        // [고도화] 새 객체로 복사해 전달 (동일 참조면 React가 setState를 bail out해 오버레이가 안 갱신됨)
-        setGlobalOptimizationProgress({ ...window.__globalOptimizationProgress });
+      const gp = window.__globalOptimizationProgress;
+      if (gp && gp.active) {
+        // 새 객체로 복사해 전달 (동일 참조면 React가 setState를 bail out해 오버레이가 안 갱신됨)
+        setGlobalOptimizationProgress({ ...gp });
       } else {
-        setGlobalOptimizationProgress(null);
+        setGlobalOptimizationProgress((prev) => (prev === null ? prev : null));
       }
     };
 
-    const interval = setInterval(checkGlobalProgress, 100);
+    const interval = setInterval(checkGlobalProgress, 200);
     return () => clearInterval(interval);
   }, []);
 

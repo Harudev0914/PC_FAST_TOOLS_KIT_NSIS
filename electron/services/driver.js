@@ -8,12 +8,7 @@
 // PowerShell 사용: Get-WmiObject Win32_PnPEntity로 PnP 장치(드라이버) 목록 조회
 // driverquery 사용: Windows 내장 명령어로 드라이버 목록 조회 (PowerShell 실패 시 폴백)
 
-const { exec, execFile } = require('child_process');
-const { promisify } = require('util');
-// [고도화] exec 기본 타임아웃/버퍼 래퍼 + 셸 없는 execFile
-const _execRaw = promisify(exec);
-const execAsync = (command, options = {}) => _execRaw(command, { timeout: 120000, maxBuffer: 1024 * 1024 * 20, ...options });
-const execFileAsync = promisify(execFile);
+const { execAsync, execFileAsync } = require('./_exec');
 
 async function getDrivers() {
   try {
