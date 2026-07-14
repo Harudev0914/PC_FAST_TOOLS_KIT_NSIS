@@ -1,41 +1,64 @@
 import React, { useState } from 'react';
+import {
+  useOptimizationProgress,
+  startOptimizationProgress,
+  endOptimizationProgress,
+} from '../hooks/useOptimizationProgress';
+import { useAppliedState } from '../hooks/useAppliedState';
 import '../styles/WindowsBoost.css';
 
 function WindowsBoost() {
-  const [enabled, setEnabled] = useState(false);
+  // 메뉴를 옮기면 이 패널은 언마운트된다 — 적용 상태는 백엔드에서 복원한다.
+  const [enabled, setEnabled] = useAppliedState('windowsboost');
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
 
-  const handleApply = async () => {
+  // 백엔드 단계별 진행률을 좌하단 토스트로 중계
+  useOptimizationProgress('windowsboost');
+
+  // ON이면 최적화를 즉시 적용하고, OFF면 켜기 직전에 찍어둔 설정으로 되돌린다.
+  // 실패하면 토글을 원래 위치로 되돌려 UI와 실제 시스템 상태가 어긋나지 않게 한다.
+  const handleToggle = async () => {
+    if (applying) return;
+
     if (!window.electronAPI?.deltaForceCleaner) {
       console.error('Windows Boost API is not available');
       return;
     }
 
+    const next = !enabled;
+    setEnabled(next);
     setApplying(true);
     setApplyResult(null);
+    startOptimizationProgress(
+      'windowsboost',
+      next ? '최적화 진행 중' : '설정 해제 중',
+      next ? '최적화 시작...' : '기본값 복원 시작...'
+    );
 
     try {
-      // 관리자 권한을 요구하지 않는다(UAC 없음). 사용자 권한으로 가능한 최적화를 수행하고,
-      // 앱이 이미 관리자로 실행 중이면 백엔드가 심화 최적화까지 자동 적용한다.
-      const result = await window.electronAPI.deltaForceCleaner.optimizeWithWindowsAPI({});
+      const result = next
+        ? await window.electronAPI.deltaForceCleaner.optimizeWithWindowsAPI()
+        : await window.electronAPI.deltaForceCleaner.restoreWindowsDefaults();
       setApplyResult(result);
-      if (result.success) {
-        setEnabled(true);
+      if (!result?.success) {
+        setEnabled(!next);
       }
     } catch (error) {
       console.error('Apply error:', error);
+      setEnabled(!next);
       setApplyResult({
         success: false,
-        error: error.message || 'Windows Boost 설정 적용 중 오류가 발생했습니다.',
+        error:
+          error.message ||
+          (next
+            ? 'Windows Boost 설정 적용 중 오류가 발생했습니다.'
+            : 'Windows Boost 설정 해제 중 오류가 발생했습니다.'),
       });
     } finally {
       setApplying(false);
+      endOptimizationProgress();
     }
-  };
-
-  const handleToggle = () => {
-    setEnabled(!enabled);
   };
 
   return (
@@ -58,7 +81,7 @@ function WindowsBoost() {
             </button>
           </div>
           <p className="toggle-description">
-            관리자 권한 없이 즉시 적용 가능한 최적화를 수행합니다. (앱을 관리자 권한으로 실행하면 서비스·Prefetch·디스크 최적화까지 자동 적용)
+            ON으로 켜면 아래 최적화가 즉시 적용되고, OFF로 끄면 <strong>켜기 직전의 설정</strong>으로 정확히 되돌립니다. (임시 파일 삭제는 되돌릴 수 없습니다)
           </p>
         </div>
       </div>
@@ -71,7 +94,7 @@ function WindowsBoost() {
               <span className="optimization-icon">✓</span>
               <div className="optimization-content">
                 <div className="optimization-name">임시 파일 정리</div>
-                <div className="optimization-description">사용자 임시 폴더의 불필요한 파일 삭제 (관리자 권한 불필요)</div>
+                <div className="optimization-description">오래된 임시 파일만 삭제하며, 실행 중인 프로그램이 쓰고 있는 파일은 건너뜁니다</div>
               </div>
             </div>
             <div className="optimization-item">
@@ -113,39 +136,20 @@ function WindowsBoost() {
         </div>
       </div>
 
-      <div className="windows-boost-card">
-        <div className="action-section">
-          <button
-            className="action-button apply-button"
-            onClick={handleApply}
-            disabled={applying}
-          >
-            {applying ? '적용 중...' : '설정 적용'}
-          </button>
-        </div>
-      </div>
-
-      {applying && (
-        <div className="windows-boost-card">
-          <div className="applying-section">
-            <div className="applying-message">Windows Boost 설정 적용 중...</div>
-            <div className="progress-bar-container">
-              <div className="progress-bar">
-                <div className="progress-bar-fill"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 진행 상황은 좌하단 전역 진행률 토스트(MainPage)가 단계별로 표시한다. */}
 
       {applyResult && applyResult.success && (
         <div className="windows-boost-card">
           <div className="success-message">
             <div className="success-icon">✓</div>
             <div className="success-text">
-              <h3 className="success-title">Windows Boost 설정이 성공적으로 적용되었습니다.</h3>
+              <h3 className="success-title">
+                Windows Boost 설정이 성공적으로 {enabled ? '적용' : '해제'}되었습니다.
+              </h3>
               <p className="success-description">
-                시스템 최적화 설정이 적용되었습니다.
+                {enabled
+                  ? '시스템 최적화 설정이 적용되었습니다.'
+                  : '켜기 직전의 설정으로 되돌렸습니다.'}
               </p>
             </div>
           </div>

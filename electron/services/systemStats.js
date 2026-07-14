@@ -4,11 +4,9 @@
 // - os: 운영체제 정보 제공. os.cpus(), os.uptime() 등으로 시스템 정보 조회
 //   사용 예: os.cpus() - CPU 정보 배열, os.uptime() - 시스템 가동 시간(초)
 // - child_process (exec): 시스템 명령어 실행. 시스템 통계 조회 명령어 실행에 사용
-// - util: 유틸리티 함수 제공. util.promisify()로 콜백 기반 함수를 Promise로 변환
 // - networkStats (networkStatsService): 네트워크 통계 서비스. getNetworkAdapterStats() 등으로 네트워크 통계 조회
 // - gpuStats (gpuStatsService): GPU 통계 서비스. getGPUStats() 등으로 GPU 통계 조회
 // - memoryDetails (memoryDetailsService): 메모리 상세 정보 서비스. getMemoryDetails()로 메모리 상세 정보 조회
-// - networkAdapterInfo (networkAdapterInfoService): 네트워크 어댑터 정보 서비스. 어댑터 정보 조회
 // - diskDetails (diskDetailsService): 디스크 상세 정보 서비스. getDiskDetails()로 디스크 정보 조회
 // - platform (platformService): 플랫폼별 기능 제공. 플랫폼 정보 조회 등
 // - cache (cacheService): 캐시 서비스. getDynamicCache()로 동적 데이터 캐싱
@@ -18,11 +16,9 @@
 
 const os = require('os');
 const { exec } = require('child_process');
-const { execAsync: execPromise } = require('./_exec');
 const networkStatsService = require('./networkStats');
 const gpuStatsService = require('./gpuStats');
 const memoryDetailsService = require('./memoryDetails');
-const networkAdapterInfoService = require('./networkAdapterInfo');
 const diskDetailsService = require('./diskDetails');
 const platformService = require('./platform');
 const cacheService = require('./cache');
@@ -332,7 +328,7 @@ async function getCPUDetails() {
         platformService.executeCommand('sysctl -n machdep.cpu.cache.l1d.size', { timeout: 5000 }),
         platformService.executeCommand('sysctl -n machdep.cpu.cache.l2.size', { timeout: 5000 }),
         platformService.executeCommand('sysctl -n machdep.cpu.cache.l3.size', { timeout: 5000 }),
-      ]).then(([brand, physical, logical, freq, coreCount, threadCount, l1i, l1d, l2, l3]) => {
+      ]).then(([brand, physical, logical, freq, _coreCount, _threadCount, l1i, l1d, l2, l3]) => {
         const cpus = os.cpus();
         let model = cpus[0]?.model || 'Unknown CPU';
         let cores = cpus.length || 0;
@@ -458,7 +454,7 @@ async function getProcessCount() {
         fs.readFile('/proc/stat', 'utf8').catch(() => ''),
         platformService.executeCommand('ps aux | wc -l', { timeout: 5000 }),
         platformService.executeCommand('ps -eLf | wc -l', { timeout: 5000 }),
-      ]).then(([stat, psResult, threadResult]) => {
+      ]).then(([_stat, psResult, threadResult]) => {
         let processes = 0;
         let threads = 0;
         
@@ -655,52 +651,49 @@ async function getGPUUsage() {
 }
 
 async function getNetworkStats() {
-  return new Promise(async (resolve) => {
-    // [perf] 어댑터 통계/Wi-Fi 조회는 WMI/netsh를 스폰함 → 2초 동적 캐시로 완화.
-    const cached = cacheService.getDynamicCache('networkStats');
-    if (cached !== null) {
-      resolve(cached);
-      return;
-    }
-    try {
-      const adapterStats = await networkStatsService.getNetworkAdapterStats();
-      const wifiInfo = await networkStatsService.getWiFiInfo();
-      
-      const ethernet = adapterStats.ethernet || { 
-        sendMB: 0, 
-        receiveMB: 0, 
-        name: '이더넷',
-        adapterName: 'Unknown',
-        ipv4: '0.0.0.0',
-        ipv6: '::',
-      };
-      
-      const wifi = adapterStats.wifi || { 
-        sendMB: 0, 
-        receiveMB: 0, 
-        name: 'Wi-Fi',
-        adapterName: 'Unknown',
-        ipv4: '0.0.0.0',
-        ipv6: '::',
-      };
-      
-      // WiFi 정보 추가
-      if (wifiInfo) {
-        wifi.ssid = wifiInfo.ssid || 'Unknown';
-        wifi.signalStrength = wifiInfo.signalStrength || 0;
-      }
+  // [perf] 어댑터 통계/Wi-Fi 조회는 WMI/netsh를 스폰함 → 2초 동적 캐시로 완화.
+  const cached = cacheService.getDynamicCache('networkStats');
+  if (cached !== null) {
+    return cached;
+  }
+  try {
+    const adapterStats = await networkStatsService.getNetworkAdapterStats();
+    const wifiInfo = await networkStatsService.getWiFiInfo();
 
-      const value = { ethernet, wifi };
-      cacheService.setDynamicCache('networkStats', value);
-      resolve(value);
-    } catch (error) {
-      console.error('Error getting network stats:', error);
-      resolve({
-        ethernet: { sendMB: 0, receiveMB: 0, name: '이더넷', adapterName: 'Unknown', ipv4: '0.0.0.0', ipv6: '::' },
-        wifi: { sendMB: 0, receiveMB: 0, name: 'Wi-Fi', adapterName: 'Unknown', ipv4: '0.0.0.0', ipv6: '::', ssid: 'Unknown', signalStrength: 0 },
-      });
+    const ethernet = adapterStats.ethernet || {
+      sendMB: 0,
+      receiveMB: 0,
+      name: '이더넷',
+      adapterName: 'Unknown',
+      ipv4: '0.0.0.0',
+      ipv6: '::',
+    };
+
+    const wifi = adapterStats.wifi || {
+      sendMB: 0,
+      receiveMB: 0,
+      name: 'Wi-Fi',
+      adapterName: 'Unknown',
+      ipv4: '0.0.0.0',
+      ipv6: '::',
+    };
+
+    // WiFi 정보 추가
+    if (wifiInfo) {
+      wifi.ssid = wifiInfo.ssid || 'Unknown';
+      wifi.signalStrength = wifiInfo.signalStrength || 0;
     }
-  });
+
+    const value = { ethernet, wifi };
+    cacheService.setDynamicCache('networkStats', value);
+    return value;
+  } catch (error) {
+    console.error('Error getting network stats:', error);
+    return {
+      ethernet: { sendMB: 0, receiveMB: 0, name: '이더넷', adapterName: 'Unknown', ipv4: '0.0.0.0', ipv6: '::' },
+      wifi: { sendMB: 0, receiveMB: 0, name: 'Wi-Fi', adapterName: 'Unknown', ipv4: '0.0.0.0', ipv6: '::', ssid: 'Unknown', signalStrength: 0 },
+    };
+  }
 }
 
 async function getAllStats(options = {}) {
@@ -765,7 +758,7 @@ async function getAllStats(options = {}) {
       Promise.race([getDiskUsage(), new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout + 5000))]).then((dsk) => {
         if (cachedDisk && Array.isArray(dsk) && Array.isArray(cachedDisk)) {
           // 각 디스크별로 정적 데이터는 캐시에서, 동적 데이터는 새로 가져온 것 사용
-          return dsk.map((d, i) => {
+          return dsk.map((d) => {
             const cached = cachedDisk.find(c => c.letter === d.letter);
             if (cached) {
               return { 

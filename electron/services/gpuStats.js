@@ -242,7 +242,6 @@ async function getDetailedGPUInfo() {
                   gpu.vramUsed = memUsedMB;
                   gpu.vramUsedPercent = (memUsedMB / memTotalMB) * 100;
                 } else if (details && details.sharedMemoryTotal > 0) {
-                  const gpuMemoryGB = vramGB !== '0.0' ? vramGB : details.sharedMemoryTotal.toFixed(1);
                   const sharedMemoryUsedMB = (details.sharedMemoryUsed || 0) * 1024;
                   const sharedMemoryTotalMB = (details.sharedMemoryTotal || 0) * 1024;
                   gpu.gpuMemory = `${Math.round(sharedMemoryUsedMB)}/${Math.round(sharedMemoryTotalMB)}MB`;
@@ -250,7 +249,6 @@ async function getDetailedGPUInfo() {
                   gpu.vramUsedPercent = sharedMemoryTotalMB > 0 ? (sharedMemoryUsedMB / sharedMemoryTotalMB) * 100 : 0;
                 }
               } else if (details && details.sharedMemoryTotal > 0) {
-                const gpuMemoryGB = vramGB !== '0.0' ? vramGB : details.sharedMemoryTotal.toFixed(1);
                 const sharedMemoryUsedMB = (details.sharedMemoryUsed || 0) * 1024;
                 const sharedMemoryTotalMB = (details.sharedMemoryTotal || 0) * 1024;
                 gpu.gpuMemory = `${Math.round(sharedMemoryUsedMB)}/${Math.round(sharedMemoryTotalMB)}MB`;
@@ -276,7 +274,7 @@ async function getDetailedGPUInfo() {
           const hasBrokenChars = (str) => {
             if (!str || typeof str !== 'string') return true;
             try {
-              const validPattern = /^[\x00-\x7F\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\s\-_\.a-zA-Z0-9]*$/;
+              const validPattern = /^[\x00-\x7F\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\s\-_.a-zA-Z0-9]*$/;
               if (!validPattern.test(str)) return true;
               if (str.trim().length < 2) return true;
               if (/[^\x00-\x7F\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F]{3,}/.test(str)) return true;

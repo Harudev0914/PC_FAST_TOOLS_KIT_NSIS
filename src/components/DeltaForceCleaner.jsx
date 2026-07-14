@@ -1,35 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import '../styles/DeltaForceCleaner.css';
 
 function DeltaForceCleaner() {
   const [directoryPath, setDirectoryPath] = useState('~\\Delta Force\\Game\\DeltaForce\\Saved\\Logs');
-  const [scanning, setScanning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
   const [scanResults, setScanResults] = useState(null);
   const [cleanResults, setCleanResults] = useState(null);
   const [finding, setFinding] = useState(false);
-
-  const handleAutoScan = async () => {
-    if (!window.electronAPI?.deltaForceCleaner) {
-      console.error('Delta Force Cleaner API is not available');
-      return;
-    }
-
-    setScanning(true);
-    setScanResults(null);
-    try {
-      const results = await window.electronAPI.deltaForceCleaner.scan(directoryPath);
-      setScanResults(results);
-    } catch (error) {
-      console.error('Scan error:', error);
-      setScanResults({
-        success: false,
-        error: error.message || '스캔 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setScanning(false);
-    }
-  };
 
   const handleFindDirectory = async () => {
     if (!window.electronAPI?.deltaForceCleaner) {
@@ -133,7 +110,7 @@ function DeltaForceCleaner() {
             <button
               className="action-button find-path-button"
               onClick={handleFindDirectory}
-              disabled={finding || scanning}
+              disabled={finding}
               title="경로 찾기"
             >
               찾기
@@ -179,19 +156,6 @@ function DeltaForceCleaner() {
           </div>
         </div>
       </div>
-
-      {scanning && (
-        <div className="cleaner-card">
-          <div className="scanning-section">
-            <div className="scanning-message">디렉토리 스캔 중...</div>
-            <div className="progress-bar-container">
-              <div className="progress-bar">
-                <div className="progress-bar-fill"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {hasValidScanResults() && (
         <div className="cleaner-card">

@@ -360,16 +360,9 @@ async function getEQPresets() {
         key: '\\Software\\Microsoft\\Windows\\CurrentVersion\\Multimedia\\Audio',
       });
 
-      await new Promise((resolve, reject) => {
-        audioKey.values((err, items) => {
-          if (!err && items) {
-            items.forEach(item => {
-              if (item.name && item.name.toLowerCase().includes('preset')) {
-              }
-            });
-          }
-          resolve();
-        });
+      // 레지스트리 키 접근 가능 여부만 확인한다(프리셋 목록은 기본값 사용).
+      await new Promise((resolve) => {
+        audioKey.values(() => resolve());
       });
     } catch (regError) {
       console.log('Using default EQ presets');

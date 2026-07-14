@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route } from 'react-router-dom';
 import ErrorBoundary from './components/ErrorBoundary';
 import Error404 from './components/Error404';
 import ErrorNetwork from './components/ErrorNetwork';
@@ -7,8 +7,7 @@ import LoadingScreen from './components/LoadingScreen';
 import MainPage from './components/MainPage';
 import './styles/App.css';
 
-function App() {
-  const [apiReady, setApiReady] = useState(false);
+function App() {
   const [showLoading, setShowLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -21,8 +20,7 @@ function App() {
     const checkAPI = async () => {
       if (!isMounted) return;
 
-      if (window.electronAPI) {
-        setApiReady(true);
+      if (window.electronAPI) {
 
         try {
           if (window.electronAPI.audio?.getDevices) {
@@ -55,8 +53,7 @@ function App() {
         } else {
           console.error('electronAPI not available after retries');
           if (isMounted) {
-            setError('Electron API를 로드할 수 없습니다. Electron 환경에서 실행 중인지 확인하세요.');
-            setApiReady(true);
+            setError('Electron API를 로드할 수 없습니다. Electron 환경에서 실행 중인지 확인하세요.');
             setShowLoading(false);
           }
         }
@@ -65,10 +62,11 @@ function App() {
     
     // 최대 10초 후에는 무조건 로딩 화면 닫기 (폴백)
     const fallbackTimeout = setTimeout(() => {
-      if (isMounted && showLoading) {
+      // 이 이펙트는 마운트 시 한 번만 돌아 showLoading이 초기값(true)에 고정된다 —
+      // 조건에서 아무 역할도 못 하므로 isMounted만 본다. setShowLoading(false)는 여러 번 불려도 무해.
+      if (isMounted) {
         console.warn('Loading timeout - forcing show to false');
-        setShowLoading(false);
-        setApiReady(true);
+        setShowLoading(false);
       }
     }, 10000);
     

@@ -48,98 +48,15 @@ async function getOSInfo() {
     };
   }
 }
-
-// 권한 상태는 프로세스 수명 동안 변하지 않으므로 1회 확인 후 캐시한다.
-// (매 최적화 호출마다 net session을 새로 띄우던 부하/행 위험 제거)
-let _isAdminCache = null;
-
-async function isAdmin() {
-  if (_isAdminCache !== null) return _isAdminCache;
-
-  const platform = process.platform;
-  if (platform === 'win32') {
-    try {
-      // net session은 관리자 권한이 있어야만 성공. 타임아웃으로 무한 대기 방지.
-      await execAsync('net session', { timeout: 3000 });
-      _isAdminCache = true;
-    } catch (error) {
-      _isAdminCache = false;
-    }
-    return _isAdminCache;
-  } else if (platform === 'linux' || platform === 'darwin') {
-    _isAdminCache = !!(process.getuid && process.getuid() === 0);
-    return _isAdminCache;
-  }
-  _isAdminCache = false;
-  return _isAdminCache;
-}
-
-async function requestAdmin(command, args = []) {
-  const platform = process.platform;
-  if (platform === 'win32') {
-    const commandStr = command + (args.length > 0 ? ' ' + args.join(' ') : '');
-    const psCommand = `Start-Process -FilePath "${command}" -ArgumentList "${args.join('" "')}" -Verb RunAs -Wait -NoNewWindow`;
-    try {
-      const { stdout, stderr } = await execAsync(`powershell -Command "${psCommand}"`);
-      return {
-        success: true,
-        stdout: stdout,
-        stderr: stderr,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  } else if (platform === 'linux') {
-    const commandStr = command + (args.length > 0 ? ' ' + args.join(' ') : '');
-    try {
-      const { stdout, stderr } = await execAsync(`sudo ${commandStr}`);
-      return {
-        success: true,
-        stdout: stdout,
-        stderr: stderr,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  } else if (platform === 'darwin') {
-    const commandStr = command + (args.length > 0 ? ' ' + args.join(' ') : '');
-    const osaCommand = `osascript -e "do shell script \\"${commandStr}\\" with administrator privileges"`;
-    try {
-      const { stdout, stderr } = await execAsync(osaCommand);
-      return {
-        success: true,
-        stdout: stdout,
-        stderr: stderr,
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-  }
-  return {
-    success: false,
-    error: 'Unsupported platform',
-  };
-}
-
 async function executeCommand(command, options = {}) {
   const { timeout = 10000, encoding = 'utf8' } = options;
-  const { promisify } = require('util');
-  const { exec } = require('child_process');
-  const execAsync = promisify(exec);
   try {
-    const { stdout, stderr } = await Promise.race([
-      execAsync(command, { encoding, maxBuffer: 10 * 1024 * 1024 }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), timeout))
-    ]);
+    // 공용 execAsync(_exec)를 쓴다 — 여기서 promisify(exec)를 다시 만들 이유가 없다.
+    const { stdout, stderr } = await execAsync(command, {
+      encoding,
+      timeout,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     return { success: true, stdout, stderr };
   } catch (error) {
     return { success: false, error: error.message, stdout: '', stderr: '' };
@@ -195,9 +112,7 @@ function parseBytes(str) {
 }
 
 module.exports = {
-  getOSInfo,
-  isAdmin,
-  requestAdmin,
+  getOSInfo,
   executeCommand,
   readFile,
   readFiles,

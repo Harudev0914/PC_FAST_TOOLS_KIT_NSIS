@@ -171,35 +171,12 @@
   min-width: 120px;
 }
 
-.apply-button {
-  background-color: var(--accent);
-  color: white;
-}
-
-.apply-button:hover:not(:disabled) {
-  background-color: var(--accent-strong);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 0, 63, 0.4);
-}
 
 .action-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.applying-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 8px 0;
-}
-
-.applying-message {
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 16px;
-  font-weight: 500;
-}
 
 .progress-bar-container {
   width: 100%;

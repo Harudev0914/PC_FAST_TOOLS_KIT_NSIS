@@ -1,7 +1,26 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ColorPicker from './ColorPicker';
 import { drawChart as drawChartImpl } from './chart/drawChart';
 import '../styles/SmartOptimization.css';
+
+// GPU 온도 차트의 Y축 상한(°C). 관측된 최고치보다 20% 여유를 두되, 최소 50°C를 유지해
+// 아이들 구간(30~40°C)에서 눈금이 과하게 확대되지 않게 한다.
+const gpuTemperatureMax = (data) => {
+  const peak = data.length > 0 ? Math.max(...data.map((d) => d.value || 0)) : 0;
+  return Math.max(50, Math.ceil(peak * 1.2));
+};
+
+// GPU 차트가 무엇을 그릴지 한 곳에서 정한다 — 메인 차트, 헤더 라벨, 사이드바 미니 차트가
+// 모두 이 함수를 거치므로 서로 다른 지표를 보여줄 일이 없다.
+// 내장 GPU(Intel Iris Xe 등)는 온도를 보고하지 않아 온도 시계열이 비어 있다. 그때 온도를
+// 고집하면 빈 격자만 남으므로 사용률로 되돌린다.
+const gpuChartSeries = (historyData, gpuKey) => {
+  const temperature = historyData[`${gpuKey}-Temperature`] || [];
+  if (temperature.length > 0) {
+    return { data: temperature, maxValue: gpuTemperatureMax(temperature), isTemperature: true };
+  }
+  return { data: historyData[gpuKey] || [], maxValue: 100, isTemperature: false };
+};
 
 function SmartOptimization() {
   const loadGlobalState = () => {
@@ -52,6 +71,15 @@ function SmartOptimization() {
     wifi: { sendMB: 0, receiveMB: 0, name: 'Wi-Fi', adapterName: 'Unknown', ipv4: '0.0.0.0', ipv6: '::' },
     gpu: [{ usage: 0, model: 'Unknown GPU', name: 'GPU 0' }],
   });
+  // 선택된 GPU의 메인 차트가 그릴 시계열. 매 렌더마다 새 객체를 만들면 차트 useEffect가
+  // 계속 다시 돌므로 useMemo로 고정한다.
+  const selectedGpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
+  const selectedGpuChart = useMemo(
+    () => gpuChartSeries(historyData, selectedGpuKey),
+    [historyData, selectedGpuKey]
+  );
+  const gpuMainShowsTemperature = selectedGpuChart.isTemperature;
+
   const canvasRef = useRef(null);
   const diskActiveTimeCanvasRef = useRef(null);
   const diskReadSpeedCanvasRef = useRef(null);
@@ -67,7 +95,7 @@ function SmartOptimization() {
   const gpuSharedMemoryCanvasRef = useRef(null);
   const gpuVramCanvasRef = useRef(null);
   const gpuMemoryUtilCanvasRef = useRef(null);
-  const gpuTemperatureCanvasRef = useRef(null);
+  const gpuUsageCanvasRef = useRef(null);
   const gpuPowerCanvasRef = useRef(null);
   const gpuGraphicsClockCanvasRef = useRef(null);
   const gpuMemoryClockCanvasRef = useRef(null);
@@ -330,7 +358,7 @@ function SmartOptimization() {
       } else {
         updatePendingRef.current = false;
       }
-    }, [selectedComponent]);
+    }, []);
 
   useEffect(() => {
     // 초기 로드 - 백그라운드에서 즉시 시작 (UI 블로킹 방지)
@@ -487,16 +515,14 @@ function SmartOptimization() {
       }
     }
     
-    // GPU 온도 차트 (°C) - nvidia-smi에서
-    const canvasTemperature = gpuTemperatureCanvasRef.current;
-    if (canvasTemperature) {
-      const ctxTemperature = canvasTemperature.getContext('2d');
-      const dataTemperature = historyData[`${gpuKey}-Temperature`] || [];
-      if (ctxTemperature) {
-        // 온도는 일반적으로 0-100°C 범위 (최대값은 동적으로 계산)
-        const maxDataValue = dataTemperature.length > 0 ? Math.max(...dataTemperature.map(d => d.value || 0)) : 0;
-        const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2)); // 최소 50°C
-        drawChart(ctxTemperature, dataTemperature, color, maxValue);
+    // GPU 사용률 차트 (%) - 메인 차트가 온도를 표시하므로 사용률은 보조 차트로 그린다
+    const canvasUsage = gpuUsageCanvasRef.current;
+    if (canvasUsage) {
+      const ctxUsage = canvasUsage.getContext('2d');
+      const dataUsage = historyData[gpuKey] || [];
+      if (ctxUsage) {
+        const maxValue = 100; // 0-100% 범위
+        drawChart(ctxUsage, dataUsage, color, maxValue);
       }
     }
     
@@ -573,26 +599,21 @@ function SmartOptimization() {
     }
   }, [historyData, selectedComponent, chartColors, drawChart]);
 
-  // GPU 메인 차트 그리기 (GPU 사용률)
+  // GPU 메인 차트 그리기 — 온도를 보고하는 GPU면 온도, 아니면(내장 GPU) 사용률
   useEffect(() => {
     if (selectedComponent !== 'gpu' && !selectedComponent.startsWith('gpu-')) return;
-    
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 선택된 GPU 인덱스의 사용률 히스토리
-    const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
-    const data = historyData[gpuKey] || historyData.gpu || [];
-    
     // 그래프 색상
     const color = chartColors[selectedComponent] || chartColors['gpu'] || '#7E8087';
 
-    // GPU 사용률은 0-100% 범위
-    drawChart(ctx, data, color, 100);
-  }, [historyData, selectedComponent, chartColors, drawChart]);
+    drawChart(ctx, selectedGpuChart.data, color, selectedGpuChart.maxValue);
+  }, [selectedComponent, chartColors, drawChart, selectedGpuChart]);
 
   // 일반 차트 그리기 (CPU, Memory) - historyData 업데이트 시마다 다시 그리기
   useEffect(() => {
@@ -637,17 +658,23 @@ function SmartOptimization() {
       const miniCtx = miniCanvas.getContext('2d');
       if (!miniCtx) return;
 
-      // 데이터 가져오기 (디스크는 usage 데이터 사용, 네트워크는 총 속도 사용, GPU는 gpu-0 형식)
+      // 데이터/최대값 정하기 (디스크는 usage, 네트워크는 총 속도, GPU는 메인 차트와 동일 규칙)
       let miniData = [];
+      let miniMaxValue = 100;
+
       if (key.startsWith('disk-')) {
-        const diskKey = `${key}-usage`;
-        miniData = historyData[diskKey] || [];
+        miniData = historyData[`${key}-usage`] || [];
       } else if (key === 'ethernet' || key === 'wifi') {
-        // 네트워크는 총 속도 (보내기 + 받기)
+        // 네트워크는 총 속도 (보내기 + 받기). 최대값의 1.2배로 여유를 두되 최소 10 MB/s.
         miniData = historyData[key] || [];
-      } else if (key === 'gpu') {
-        // GPU는 gpu-0 형식으로 저장됨
-        miniData = historyData['gpu-0'] || historyData.gpu || [];
+        const peak = miniData.length > 0 ? Math.max(...miniData.map(d => d.value || 0)) : 0;
+        miniMaxValue = Math.max(10, Math.ceil(peak * 1.2));
+      } else if (key === 'gpu' || key.startsWith('gpu-')) {
+        // 사이드바 미니 차트도 메인 차트와 같은 지표(온도, 없으면 사용률)를 보여준다.
+        const gpuKey = key.startsWith('gpu-') ? key : 'gpu-0';
+        const series = gpuChartSeries(historyData, gpuKey);
+        miniData = series.data;
+        miniMaxValue = series.maxValue;
       } else {
         miniData = historyData[key] || [];
       }
@@ -655,78 +682,64 @@ function SmartOptimization() {
       // 색상
       const miniColor = chartColors[key] || '#7E8087';
 
-      // 최대값 계산
-      let miniMaxValue = 100;
-      if (key === 'ethernet' || key === 'wifi') {
-        // 네트워크 속도: 데이터에서 최대값을 찾아서 1.2배로 여유 공간 확보 (최소 10 MB/s)
-        const maxDataValue = miniData.length > 0 ? Math.max(...miniData.map(d => d.value || 0)) : 0;
-        miniMaxValue = Math.max(10, Math.ceil(maxDataValue * 1.2)); // 최소 10 MB/s, 최대값의 1.2배
-      } else if (key.startsWith('disk-')) {
-        miniMaxValue = 100; // 디스크 사용률은 0-100%
-      }
-
       // drawChart 함수 사용 (데이터가 없어도 그리드 표시)
       drawChart(miniCtx, miniData, miniColor, miniMaxValue);
     });
   }, [historyData, chartColors, components, drawChart]);
 
+  // 사이드바 카드에 표시할 값. value는 단위까지 포함한 완성된 문자열이다 — GPU만 단위가
+  // 다르므로(°C) 호출 측에서 '%'를 붙이지 않도록 여기서 전부 만들어 넘긴다.
   const getComponentDisplay = (key) => {
     // 디스크 키 처리 (disk-{letter} 형식)
     if (key.startsWith('disk-')) {
       const diskLetter = key.replace('disk-', '');
       const diskArray = Array.isArray(systemStats.disk) ? systemStats.disk : (systemStats.disk ? [systemStats.disk] : []);
       const disk = diskArray.find(d => d.letter === diskLetter);
-      if (disk) {
-        return {
-          usage: disk.usage || 0,
-          detail: `${disk.type || 'Unknown'}`,
-        };
-      }
-      return { usage: 0, detail: 'Unknown' };
+      if (!disk) return { value: '0%', detail: 'Unknown' };
+      return {
+        value: `${disk.usage || 0}%`,
+        detail: `${disk.type || 'Unknown'}`,
+      };
     }
-    
-    // GPU 키 처리 (gpu-{index} 형식)
+
+    // GPU 키 처리 (gpu-{index} 형식).
+    // 미니 차트가 온도를 그리므로 옆의 숫자도 온도로 맞춘다 — 안 그러면 그래프는 온도인데
+    // 숫자는 사용률(%)이라 서로 다른 걸 가리킨다. 온도를 못 읽는 내장 GPU는 사용률로 되돌린다.
     if (key.startsWith('gpu-')) {
       const gpuIndex = parseInt(key.replace('gpu-', ''));
       const gpuArray = Array.isArray(systemStats.gpu) ? systemStats.gpu : (systemStats.gpu ? [systemStats.gpu] : []);
       const gpu = gpuArray[gpuIndex];
-      if (gpu) {
-        return {
-          usage: gpu.usage || 0,
-          detail: gpu.model || 'Unknown GPU',
-        };
-      }
-      return { usage: 0, detail: 'Unknown GPU' };
+      if (!gpu) return { value: '0%', detail: 'Unknown GPU' };
+
+      const showsTemperature = gpuChartSeries(historyData, key).isTemperature;
+      return {
+        value: showsTemperature ? `${gpu.temperature}°C` : `${gpu.usage || 0}%`,
+        detail: gpu.model || 'Unknown GPU',
+      };
     }
 
     const stat = systemStats[key];
-    if (!stat) return { usage: 0, detail: '' };
+    if (!stat) return { value: '0%', detail: '' };
 
     if (key === 'cpu') {
       return {
-        usage: stat.usage || 0,
+        value: `${stat.usage || 0}%`,
         detail: `${stat.speed || '0 GHz'}`,
       };
     }
     if (key === 'memory') {
       return {
-        usage: stat.usage || 0,
+        value: `${stat.usage || 0}%`,
         detail: `${stat.used || 0}/${stat.total || 0}GB (${stat.usage || 0}%)`,
       };
     }
-    if (key === 'ethernet') {
+    if (key === 'ethernet' || key === 'wifi') {
       return {
-        usage: 0,
+        value: '0%',
         detail: `보내기: ${(stat.sendMB || 0).toFixed(2)}MB 받기: ${(stat.receiveMB || 0).toFixed(2)}MB`,
       };
     }
-    if (key === 'wifi') {
-      return {
-        usage: 0,
-        detail: `보내기: ${(stat.sendMB || 0).toFixed(2)}MB 받기: ${(stat.receiveMB || 0).toFixed(2)}MB`,
-      };
-    }
-    return { usage: 0, detail: '' };
+    return { value: '0%', detail: '' };
   };
 
   const getCurrentStat = () => {
@@ -1199,7 +1212,7 @@ function SmartOptimization() {
                       )}
                     </div>
                     <div className="component-stats">
-                      <span className="component-usage">{display.usage}%</span>
+                      <span className="component-usage">{display.value}</span>
                       <span className="component-detail">{display.detail}</span>
                     </div>
                   </div>
@@ -1305,42 +1318,17 @@ function SmartOptimization() {
                     ))}
                   </>
                 )}
-                {optimizeResult.requiresAdmin && !optimizeResult.adminGranted && (
-                  <div className="optimize-result-item warning">
-                    ⚠ 일부 작업은 관리자 권한이 필요하여 건너뛰었습니다.
-                  </div>
-                )}
                 {optimizeResult.errors && optimizeResult.errors.length > 0 && (
-                  <>
-                    {optimizeResult.errors.filter(e => e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item warning">
-                        ⚠ 관리자 권한이 필요한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.action || error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                    {optimizeResult.errors.filter(e => !e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item error">
-                        ❌ 오류가 발생한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => !e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.action || error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
+                  <div className="optimize-result-item error">
+                    ❌ 오류가 발생한 작업:
+                    <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
+                      {optimizeResult.errors.map((error, idx) => (
+                        <li key={idx} style={{ margin: '4px 0' }}>
+                          {error.action || error.operation}: {error.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             )}
@@ -1360,16 +1348,6 @@ function SmartOptimization() {
                     ✓ Standby 메모리 정리 완료
                   </div>
                 )}
-                {optimizeResult.pageFileOptimized && (
-                  <div className="optimize-result-item success">
-                    ✓ 페이지 파일 최적화 완료
-                  </div>
-                )}
-                {optimizeResult.prefetchOptimized && (
-                  <div className="optimize-result-item success">
-                    ✓ 메모리 프리페치 최적화 완료
-                  </div>
-                )}
                 {optimizeResult.processesTerminated && (
                   <div className="optimize-result-item success">
                     ✓ 불필요한 프로세스 종료 완료
@@ -1380,47 +1358,17 @@ function SmartOptimization() {
                     ✓ 메모리 조각 모음 완료
                   </div>
                 )}
-                {optimizeResult.virtualMemoryOptimized && (
-                  <div className="optimize-result-item success">
-                    ✓ 가상 메모리 최적화 완료
-                  </div>
-                )}
-                {optimizeResult.requiresAdmin && !optimizeResult.adminGranted && (
-                  <div className="optimize-result-item warning">
-                    ⚠ 일부 작업은 관리자 권한이 필요하여 건너뛰었습니다.
-                  </div>
-                )}
                 {optimizeResult.errors && optimizeResult.errors.length > 0 && (
-                  <>
-                    {optimizeResult.errors.filter(e => e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item warning">
-                        ⚠ 관리자 권한이 필요한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                    {optimizeResult.errors.filter(e => !e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item error">
-                        ❌ 오류가 발생한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => !e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
+                  <div className="optimize-result-item error">
+                    ❌ 오류가 발생한 작업:
+                    <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
+                      {optimizeResult.errors.map((error, idx) => (
+                        <li key={idx} style={{ margin: '4px 0' }}>
+                          {error.action || error.operation}: {error.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             )}
@@ -1440,72 +1388,22 @@ function SmartOptimization() {
                     ✓ 임시 파일 정리 완료
                   </div>
                 )}
-                {optimizeResult.diskDefragmented && (
-                  <div className="optimize-result-item success">
-                    ✓ 디스크 조각 모음/TRIM 완료
-                  </div>
-                )}
-                {optimizeResult.diskChecked && (
-                  <div className="optimize-result-item success">
-                    ✓ 디스크 검사 완료
-                  </div>
-                )}
-                {optimizeResult.systemFilesCleaned && (
-                  <div className="optimize-result-item success">
-                    ✓ 시스템 파일 정리 완료
-                  </div>
-                )}
-                {optimizeResult.indexingOptimized && (
-                  <div className="optimize-result-item success">
-                    ✓ 디스크 인덱싱 최적화 완료
-                  </div>
-                )}
-                {optimizeResult.prefetchCleaned && (
-                  <div className="optimize-result-item success">
-                    ✓ 프리페치 파일 정리 완료
-                  </div>
-                )}
                 {optimizeResult.freedSpace > 0 && (
                   <div className="optimize-result-item success">
                     ✓ 총 {(optimizeResult.freedSpace / (1024 * 1024 * 1024)).toFixed(2)}GB 공간 확보
                   </div>
                 )}
-                {optimizeResult.requiresAdmin && !optimizeResult.adminGranted && (
-                  <div className="optimize-result-item warning">
-                    ⚠ 일부 작업은 관리자 권한이 필요하여 건너뛰었습니다.
-                  </div>
-                )}
                 {optimizeResult.errors && optimizeResult.errors.length > 0 && (
-                  <>
-                    {optimizeResult.errors.filter(e => e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item warning">
-                        ⚠ 관리자 권한이 필요한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                    {optimizeResult.errors.filter(e => !e.requiresAdmin).length > 0 && (
-                      <div className="optimize-result-item error">
-                        ❌ 오류가 발생한 작업:
-                        <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
-                          {optimizeResult.errors
-                            .filter(e => !e.requiresAdmin)
-                            .map((error, idx) => (
-                              <li key={idx} style={{ margin: '4px 0' }}>
-                                {error.operation}: {error.error}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    )}
-                  </>
+                  <div className="optimize-result-item error">
+                    ❌ 오류가 발생한 작업:
+                    <ul style={{ margin: '8px 0 0 20px', padding: 0 }}>
+                      {optimizeResult.errors.map((error, idx) => (
+                        <li key={idx} style={{ margin: '4px 0' }}>
+                          {error.action || error.operation}: {error.error}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
             )}
@@ -1636,8 +1534,14 @@ function SmartOptimization() {
               <>
                 <div className="chart-container">
                   <div className="chart-header">
-                    <span className="chart-label">GPU 사용률</span>
-                    <span className="chart-max-value">100%</span>
+                    <span className="chart-label">
+                      {gpuMainShowsTemperature ? 'GPU 온도' : 'GPU 사용률'}
+                    </span>
+                    <span className="chart-max-value">
+                      {gpuMainShowsTemperature
+                        ? `${selectedGpuChart.maxValue}°C`
+                        : '100%'}
+                    </span>
                   </div>
                   <canvas
                     ref={canvasRef}
@@ -1808,22 +1712,17 @@ function SmartOptimization() {
                       />
                     </div>
                   )}
-                  {isValidValue(getCurrentStat()?.temperature) && (
+                  {/* 메인 차트가 온도일 때만 사용률을 보조 차트로 낸다. 온도를 보고하지 않는
+                      GPU는 메인 차트가 이미 사용률이므로 여기서 또 그리면 중복이다.
+                      사용률은 유휴 시 0이 정상값이라 isValidValue로 가리지 않는다. */}
+                  {gpuMainShowsTemperature && (
                     <div className="gpu-chart-item">
                       <div className="chart-header">
-                        <span className="chart-label">GPU 온도</span>
-                        <span className="chart-max-value">
-                          {(() => {
-                            const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
-                            const tempData = historyData[`${gpuKey}-Temperature`] || [];
-                            const maxDataValue = tempData.length > 0 ? Math.max(...tempData.map(d => d.value || 0)) : 0;
-                            const maxValue = Math.max(50, Math.ceil(maxDataValue * 1.2));
-                            return `${maxValue}°C`;
-                          })()}
-                        </span>
+                        <span className="chart-label">GPU 사용률</span>
+                        <span className="chart-max-value">100%</span>
                       </div>
                       <canvas
-                        ref={gpuTemperatureCanvasRef}
+                        ref={gpuUsageCanvasRef}
                         width={380}
                         height={200}
                         className="performance-chart"
@@ -1881,7 +1780,6 @@ function SmartOptimization() {
                         <span className="chart-max-value">
                           {(() => {
                             const gpuKey = selectedComponent.startsWith('gpu-') ? selectedComponent : 'gpu-0';
-                            const memClockData = historyData[`${gpuKey}-MemoryClock`] || [];
                             const clockData = historyData[`${gpuKey}-MemoryClock`] || [];
                             const maxDataValue = clockData.length > 0 ? Math.max(...clockData.map(d => d.value || 0)) : 0;
                             const maxValue = Math.max(1000, Math.ceil(maxDataValue * 1.1));
@@ -2612,7 +2510,7 @@ function SmartOptimization() {
                             if (!str || typeof str !== 'string') return true;
                             try {
                               // 유효한 문자 범위: ASCII, 한글, 자모, 호환 자모, 공백, 하이픈, 언더스코어, 점, 영문자, 숫자
-                              const validPattern = /^[\x00-\x7F\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\s\-_\.a-zA-Z0-9]*$/;
+                              const validPattern = /^[\x00-\x7F\uAC00-\uD7A3\u1100-\u11FF\u3130-\u318F\s\-_.a-zA-Z0-9]*$/;
                               if (!validPattern.test(str)) return true;
                               // 너무 짧거나 의미 없는 문자열
                               if (str.trim().length < 2) return true;

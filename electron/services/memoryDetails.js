@@ -7,22 +7,11 @@
 //   si.disksIO() - 디스크 I/O 통계 조회 (메모리 관련 간접 정보)
 //   si.fsStats() - 파일 시스템 통계 조회
 //   si.cpuTemperature() - CPU 온도 조회 (간접 정보)
-// - os: 운영체제 정보 제공. os.totalmem(), os.freemem() 등으로 메모리 정보 조회
-// 변수 설명:
-//   - previousDiskIO: 이전 디스크 I/O 통계를 저장하는 변수 (변화량 계산용)
-//   - previousFsStats: 이전 파일 시스템 통계를 저장하는 변수 (변화량 계산용)
-//   - previousTime: 이전 조회 시각을 저장하는 변수 (시간 간격 계산용)
 
 const si = require('systeminformation');
-const os = require('os');
-
-let previousDiskIO = null;
-let previousFsStats = null;
-let previousTime = null;
 
 async function getMemoryDetails() {
   try {
-    const currentTime = Date.now();
     const [mem, memLayout, diskIO, fsStats, cpuTemp] = await Promise.all([
       si.mem().catch(() => null),
       si.memLayout().catch(() => []),
@@ -100,10 +89,6 @@ async function getMemoryDetails() {
       readSpeedKBps = Math.round((rIOps * avgBlockSize / 1024) * 100) / 100;
       writeSpeedKBps = Math.round((wIOps * avgBlockSize / 1024) * 100) / 100;
     }
-    
-    previousDiskIO = diskIO;
-    previousFsStats = fsStats;
-    previousTime = currentTime;
     
     let cpuTemperature = null;
     let cpuTempMain = null;

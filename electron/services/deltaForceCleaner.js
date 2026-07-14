@@ -17,8 +17,12 @@
 const fs = require('fs').promises;
 const path = require('path');
 const os = require('os');
-const Registry = require('winreg');
+const { app } = require('electron');
 const { execAsync } = require('./_exec');
+const optimizationState = require('./optimizationState');
+const registrySnapshot = require('./registrySnapshot');
+
+const WINDOWS_BOOST_STATE_KEY = 'windowsboost';
 
 const DEFAULT_PATH = path.join(os.homedir(), 'Delta Force', 'Game', 'DeltaForce', 'Saved', 'Logs');
 
@@ -117,6 +121,31 @@ async function scan(dirPath = DEFAULT_PATH) {
   }
 }
 
+// 디렉터리 내용을 재귀 삭제한다(디렉터리 자체는 남긴다). 카운터를 인자로 받아 누적한다.
+// 실패한 항목은 errors에 쌓고 나머지는 계속 지운다 — 잠긴 파일 하나 때문에 전체가 멈추지 않는다.
+async function deleteDirectoryContents(dir, results) {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+
+    try {
+      if (entry.isDirectory()) {
+        await deleteDirectoryContents(fullPath, results);
+        await fs.rmdir(fullPath);
+        results.deletedFolders++;
+      } else {
+        const stats = await fs.stat(fullPath);
+        await fs.unlink(fullPath);
+        results.deletedFiles++;
+        results.freedSpace += stats.size;
+      }
+    } catch (error) {
+      results.errors.push({ path: fullPath, error: error.message });
+    }
+  }
+}
+
 async function clean(dirPath = DEFAULT_PATH) {
   const results = {
     deletedFiles: 0,
@@ -145,41 +174,8 @@ async function clean(dirPath = DEFAULT_PATH) {
       };
     }
 
-    async function deleteDirectory(dir) {
-      const entries = await fs.readdir(dir, { withFileTypes: true });
-      
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        
-        try {
-          if (entry.isDirectory()) {
-            await deleteDirectory(fullPath);
-            try {
-              await fs.rmdir(fullPath);
-              results.deletedFolders++;
-            } catch (rmError) {
-              // Directory might not be empty, try again
-              try {
-                await fs.rmdir(fullPath);
-                results.deletedFolders++;
-              } catch (e) {
-                results.errors.push({ path: fullPath, error: e.message });
-              }
-            }
-          } else {
-            const stats = await fs.stat(fullPath);
-            await fs.unlink(fullPath);
-            results.deletedFiles++;
-            results.freedSpace += stats.size;
-          }
-        } catch (error) {
-          results.errors.push({ path: fullPath, error: error.message });
-        }
-      }
-    }
-
-    // Delete all files in the directory (but keep the directory itself)
-    await deleteDirectory(actualPath);
+    // 디렉터리 자체는 남기고 내용만 비운다
+    await deleteDirectoryContents(actualPath, results);
 
     return {
       success: true,
@@ -198,153 +194,141 @@ async function clean(dirPath = DEFAULT_PATH) {
   }
 }
 
-// 게임 탐색기 (Game Explorer) 기능
-async function getGameExplorerGames() {
-  try {
-    // PowerShell을 사용하여 게임 탐색기의 게임 목록 가져오기
-    const script = `
-      $code = @'
-      using System;
-      using System.Runtime.InteropServices;
-      using System.Collections.Generic;
-      namespace GameExplorer {
-        [Guid("E7B2FB72-D728-49B3-A5F2-18EBF5F1349E")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        public interface IGameExplorer2 {
-          int GetGames([MarshalAs(UnmanagedType.SafeArray, SafeArraySubType = VarEnum.VT_BSTR)] out string[] gamePaths);
-          int InstallGame([MarshalAs(UnmanagedType.LPWStr)] string gdfPath, [MarshalAs(UnmanagedType.LPWStr)] string gamePath, int installScope, out IntPtr instanceID);
-          int UninstallGame([MarshalAs(UnmanagedType.LPWStr)] string instanceID);
-          int CheckAccess([MarshalAs(UnmanagedType.LPWStr)] string instanceID, [MarshalAs(UnmanagedType.Bool)] out bool hasAccess);
-        }
-        [ComImport, Guid("9A5EA990-3034-4D6F-9128-01F3C6EABDDF")]
-        public class GameExplorer { }
-      }
-'@
-      Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-      
-      try {
-        $ge = New-Object -ComObject GameExplorer.GameExplorer
-        $gamePaths = @()
-        $result = $ge.GetGames([ref]$gamePaths)
-        if ($result -eq 0) {
-          return $gamePaths | ConvertTo-Json
-        }
-      } catch {
-        # Fallback: 레지스트리에서 게임 목록 읽기
-        $gamesPath = "Registry::HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameUX"
-        $games = Get-ChildItem -Path $gamesPath -ErrorAction SilentlyContinue | ForEach-Object {
-          $gameKey = $_.PSPath
-          $configPath = (Get-ItemProperty -Path $gameKey -Name ConfigGDFPath -ErrorAction SilentlyContinue).ConfigGDFPath
-          $installPath = (Get-ItemProperty -Path $gameKey -Name InstallDirectory -ErrorAction SilentlyContinue).InstallDirectory
-          if ($installPath) {
-            @{
-              InstanceID = $_.PSChildName
-              InstallPath = $installPath
-              ConfigPath = $configPath
-            }
-          }
-        }
-        return ($games | ConvertTo-Json)
-      }
-      return "[]"
-    `;
-    
-    const { stdout } = await execAsync(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${script}"`,
-      { encoding: 'utf8', maxBuffer: 1024 * 1024 * 10 }
-    ).catch(() => ({ stdout: '[]' }));
+// 사용자 TEMP 폴더 정리.
+//
+// 예전 구현은 %TEMP%와 %LOCALAPPDATA%\Temp의 모든 항목을 조건 없이 재귀 삭제했다. 그런데 이 앱
+// 자신(Electron/Chromium)이 바로 그 폴더에 렌더러 스크래치 파일을 만든다 — 실행 중에 그걸 지우자
+// 렌더러가 "Execution context was destroyed"로 죽었다. 즉 앱이 자기 발밑을 파고 있었다.
+//
+// 그래서 두 가지를 모두 만족하는 항목만 지운다:
+//   (1) 이 앱이 켜지기 전에 만들어진 것  → 우리가 지금 쓰고 있는 파일은 절대 건드리지 않는다
+//   (2) 최근 1시간 안에 손대지 않은 것    → 다른 앱이 쓰고 있는 파일도 건드리지 않는다
+// 여기에 Electron이 관리하는 경로(userData 등)를 명시적으로 제외하고, 잠긴 파일은 건너뛴다.
+const RECENTLY_USED_MS = 60 * 60 * 1000;
 
+// 삭제해도 되는 항목인지 판정한다. Electron에 의존하지 않는 순수 함수라 단위 테스트로 고정해 둔다.
+// cutoff: 이 시각보다 "먼저" 마지막으로 수정된 항목만 삭제 대상이다.
+// protectedPaths: 앱이 관리하는 경로(소문자, 절대경로). 이 경로 자신 또는 그 조상은 건드리지 않는다.
+function isSafeToDeleteTempEntry(fullPath, mtimeMs, cutoff, protectedPaths) {
+  const lower = path.resolve(fullPath).toLowerCase();
+
+  // 보호 경로 자신이거나, 보호 경로를 품고 있는 조상 디렉터리면 삭제 금지
+  // (예: %TEMP%\foo 를 지우면 %TEMP%\foo\bar 인 userData까지 날아간다)
+  for (const p of protectedPaths) {
+    if (p === lower || p.startsWith(lower + path.sep)) return false;
+  }
+
+  // 아직 쓰이고 있을 수 있는 항목 (앱 시작 후 생성됐거나 최근에 손댄 것)
+  if (mtimeMs >= cutoff) return false;
+
+  return true;
+}
+
+// Electron이 앱 데이터를 두는 경로들. 보통 %TEMP% 밖이지만, 포터블 실행이나 --user-data-dir로
+// TEMP 안을 가리킬 수 있으므로 방어적으로 제외 목록에 넣는다.
+function protectedTempPaths() {
+  const paths = [];
+  for (const name of ['userData', 'sessionData', 'crashDumps', 'logs']) {
     try {
-      const games = JSON.parse(stdout || '[]');
-      return Array.isArray(games) ? games : (games ? [games] : []);
-    } catch {
-      return [];
+      paths.push(path.resolve(app.getPath(name)).toLowerCase());
+    } catch { /* 해당 플랫폼에 없는 경로는 무시 */ }
+  }
+  return paths;
+}
+
+async function cleanTempDirs() {
+  // process.uptime()은 초 단위 — 이 프로세스가 시작한 절대 시각을 구한다.
+  const appStartedAt = Date.now() - process.uptime() * 1000;
+  const notTouchedSince = Date.now() - RECENTLY_USED_MS;
+  const cutoff = Math.min(appStartedAt, notTouchedSince);
+  const protectedPaths = protectedTempPaths();
+
+  const tempDirs = [os.tmpdir(), path.join(process.env.LOCALAPPDATA || '', 'Temp')].filter(Boolean);
+  const seenDirs = new Set();
+  let removed = 0;
+  let skipped = 0;
+
+  for (const dir of tempDirs) {
+    const dedupKey = path.resolve(dir).toLowerCase();
+    if (seenDirs.has(dedupKey)) continue;
+    seenDirs.add(dedupKey);
+
+    let entries = [];
+    try { entries = await fs.readdir(dir); } catch { continue; }
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+
+      let stats;
+      try {
+        stats = await fs.stat(fullPath);
+      } catch {
+        skipped++; // stat조차 안 되면 잠긴 항목 — 건드리지 않는다
+        continue;
+      }
+
+      if (!isSafeToDeleteTempEntry(fullPath, stats.mtimeMs, cutoff, protectedPaths)) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        await fs.rm(fullPath, { recursive: true, force: true });
+        removed++;
+      } catch {
+        skipped++; // 사용 중(잠긴) 파일
+      }
     }
-  } catch (error) {
-    console.error('Error getting Game Explorer games:', error);
-    return [];
   }
+
+  return { removed, skipped };
+}
+// Windows Boost — 사용자 권한으로 즉시 적용 가능한 최적화.
+//
+// 관리자 권한 항목(서비스 비활성화, Prefetch/Superfetch, 디스크 조각모음)은 UAC 없이는 어차피
+// 실패하므로 아예 넣지 않는다. 여기서 건드리는 값은 HKCU와 사용자 TEMP뿐이다.
+//
+// OFF는 "Windows 기본값"이 아니라 "ON을 누르기 직전의 값"으로 되돌린다 — 적용 직전에 스냅샷을
+// 찍어 두고 restoreWindowsDefaults가 그대로 복원한다.
+// 임시 파일 삭제와 DNS 플러시는 되돌릴 수 있는 대상이 아니므로 스냅샷에 넣지 않는다.
+const GAMEBAR = 'Software\\Microsoft\\GameBar';
+const GAMECONFIG = 'System\\GameConfigStore';
+const VISUALFX = 'Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects';
+
+const TOUCHED_VALUES = [
+  { regPath: GAMEBAR, name: 'AutoGameModeEnabled' },
+  { regPath: GAMEBAR, name: 'AllowAutoGameMode' },
+  { regPath: GAMEBAR, name: 'UseNexusForGameBarEnabled' },
+  { regPath: GAMECONFIG, name: 'GameDVR_Enabled' },
+  { regPath: VISUALFX, name: 'VisualFXSetting' },
+].map((entry) => ({ ...entry, hive: 'HKCU' }));
+
+// HKCU DWORD 설정 헬퍼: reg add로 키 생성까지 한 번에 처리(관리자 권한 불필요).
+const setHKCU = (regPath, name, value) =>
+  execAsync(`reg add "HKCU\\${regPath}" /v ${name} /t REG_DWORD /d ${value} /f`, { timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+
+// 레지스트리 변경(시각 효과 등)을 재로그인 없이 즉시 반영
+const applyUserParams = () =>
+  execAsync('rundll32.exe user32.dll,UpdatePerUserSystemParameters 1, True', { timeout: 8000 }).catch(() => {});
+
+// 백그라운드 프로세스 우선순위를 일괄 조정한다.
+// 적용: 100MB 이상 쓰는 프로세스를 BelowNormal로 → 해제: BelowNormal인 것을 Normal로.
+// 프로세스는 뜨고 지므로 스냅샷 대상이 아니다(적용 시점의 PID를 나중에 되돌릴 수 없다).
+async function setBackgroundPriority(target) {
+  const script =
+    target === 'BelowNormal'
+      ? "$p = Get-Process | Where-Object { $_.WorkingSet -gt 100MB -and $_.PriorityClass -ne 'High' -and $_.ProcessName -ne 'svchost' }"
+      : "$p = Get-Process | Where-Object { $_.PriorityClass -eq 'BelowNormal' }";
+
+  await execAsync(
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; ${script}; foreach ($x in $p) { try { $x.PriorityClass = '${target}' } catch { } }"`,
+    { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 * 4 }
+  ).catch(() => {});
 }
 
-async function installGameToExplorer(gamePath, gdfPath) {
-  try {
-    const script = `
-      $code = @'
-      using System;
-      using System.Runtime.InteropServices;
-      namespace GameExplorer {
-        [Guid("E7B2FB72-D728-49B3-A5F2-18EBF5F1349E")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        public interface IGameExplorer2 {
-          int InstallGame([MarshalAs(UnmanagedType.LPWStr)] string gdfPath, [MarshalAs(UnmanagedType.LPWStr)] string gamePath, int installScope, out IntPtr instanceID);
-        }
-        [ComImport, Guid("9A5EA990-3034-4D6F-9128-01F3C6EABDDF")]
-        public class GameExplorer { }
-      }
-'@
-      Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-      
-      $ge = New-Object -ComObject GameExplorer.GameExplorer
-      $instanceID = [IntPtr]::Zero
-      $result = $ge.InstallGame("${gdfPath}", "${gamePath}", 0, [ref]$instanceID)
-      if ($result -eq 0) {
-        return "Success"
-      } else {
-        return "Failed: $result"
-      }
-    `;
-    
-    const { stdout } = await execAsync(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${script}"`,
-      { encoding: 'utf8' }
-    );
-    
-    return { success: stdout.includes('Success'), message: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-async function uninstallGameFromExplorer(instanceID) {
-  try {
-    const script = `
-      $code = @'
-      using System;
-      using System.Runtime.InteropServices;
-      namespace GameExplorer {
-        [Guid("E7B2FB72-D728-49B3-A5F2-18EBF5F1349E")]
-        [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-        public interface IGameExplorer2 {
-          int UninstallGame([MarshalAs(UnmanagedType.LPWStr)] string instanceID);
-        }
-        [ComImport, Guid("9A5EA990-3034-4D6F-9128-01F3C6EABDDF")]
-        public class GameExplorer { }
-      }
-'@
-      Add-Type -TypeDefinition $code -ErrorAction SilentlyContinue
-      
-      $ge = New-Object -ComObject GameExplorer.GameExplorer
-      $result = $ge.UninstallGame("${instanceID}")
-      if ($result -eq 0) {
-        return "Success"
-      } else {
-        return "Failed: $result"
-      }
-    `;
-    
-    const { stdout } = await execAsync(
-      `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${script}"`,
-      { encoding: 'utf8' }
-    );
-    
-    return { success: stdout.includes('Success'), message: stdout };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-// Windows API 기반 최적화
-async function optimizeWithWindowsAPI(options = {}) {
+async function optimizeWithWindowsAPI(onProgress = () => {}) {
   const results = {
     success: true,
     operations: [],
@@ -355,55 +339,30 @@ async function optimizeWithWindowsAPI(options = {}) {
     gameDVRDisabled: false,
     visualEffectsOptimized: false,
     dnsFlushed: false,
-    servicesOptimized: false,
-    prefetchOptimized: false,
-    searchOptimized: false,
-    diskOptimized: false,
-    adminGranted: false,
   };
 
-  // [변경] 관리자 권한을 "요구"하지 않는다(UAC 프롬프트 없음). 아래 1~6은 모두
-  // 사용자 권한(HKCU/사용자 TEMP)에서 동작하는 최적화이며, 이미 관리자로 실행 중인
-  // 경우에만 심화 최적화(서비스/Prefetch/Search/디스크)를 추가로 적용한다.
-  const permissionsService = require('./permissions');
-  const isAdmin = await permissionsService.isAdmin().catch(() => false);
-  results.adminGranted = isAdmin;
-
-  // HKCU DWORD 값 설정 헬퍼: reg add로 키 생성까지 한 번에 처리(관리자 권한 불필요).
-  const setHKCU = (regPath, name, value) =>
-    execAsync(`reg add "HKCU\\${regPath}" /v ${name} /t REG_DWORD /d ${value} /f`, { timeout: 5000 })
-      .then(() => true)
-      .catch(() => false);
-
   try {
-    // 1. 임시 파일 정리 (사용자 TEMP - 관리자 권한 불필요)
+    // 0. 무엇을 바꾸기 전에 지금 값을 찍어 둔다. OFF는 이 값으로 되돌린다.
+    onProgress(3, '현재 설정 백업 중...');
+    const snapshot = { values: await registrySnapshot.capture(TOUCHED_VALUES) };
+
+    // 1. 임시 파일 정리 (되돌릴 수 없음 — 스냅샷 대상 아님)
+    onProgress(12, '임시 파일 정리 중...');
     try {
-      const tempDirs = [os.tmpdir(), path.join(process.env.LOCALAPPDATA || '', 'Temp')].filter(Boolean);
-      const seen = new Set();
-      let removed = 0;
-      for (const dir of tempDirs) {
-        const dedupKey = dir.toLowerCase();
-        if (seen.has(dedupKey)) continue;
-        seen.add(dedupKey);
-        let entries = [];
-        try { entries = await fs.readdir(dir); } catch { continue; }
-        for (const entry of entries) {
-          try {
-            await fs.rm(path.join(dir, entry), { recursive: true, force: true });
-            removed++;
-          } catch { /* 사용 중(잠긴) 파일은 건너뜀 */ }
-        }
-      }
+      const { removed, skipped } = await cleanTempDirs();
       results.tempCleaned = true;
-      results.operations.push(`임시 파일 정리 완료 (${removed}개 항목 제거)`);
+      results.operations.push(
+        `임시 파일 정리 완료 (${removed}개 제거, 사용 중인 ${skipped}개는 건너뜀)`
+      );
     } catch (error) {
       results.errors.push({ action: 'tempCleanup', error: error.message });
     }
 
-    // 2. 게임 모드 활성화 (HKCU - 관리자 권한 불필요)
+    // 2. 게임 모드 활성화
+    onProgress(35, '게임 모드 활성화 중...');
     try {
-      const ok1 = await setHKCU('Software\\Microsoft\\GameBar', 'AutoGameModeEnabled', 1);
-      const ok2 = await setHKCU('Software\\Microsoft\\GameBar', 'AllowAutoGameMode', 1);
+      const ok1 = await setHKCU(GAMEBAR, 'AutoGameModeEnabled', 1);
+      const ok2 = await setHKCU(GAMEBAR, 'AllowAutoGameMode', 1);
       if (ok1 || ok2) {
         results.gameModeEnabled = true;
         results.operations.push('게임 모드 활성화 완료');
@@ -412,11 +371,12 @@ async function optimizeWithWindowsAPI(options = {}) {
       results.errors.push({ action: 'gameMode', error: error.message });
     }
 
-    // 3. Game DVR/백그라운드 녹화 비활성화 (HKCU - 게임 프레임 향상, 관리자 권한 불필요)
+    // 3. Game DVR/백그라운드 녹화 비활성화 (게임 프레임 향상)
+    onProgress(50, 'Game DVR 비활성화 중...');
     try {
-      const ok1 = await setHKCU('System\\GameConfigStore', 'GameDVR_Enabled', 0);
-      await setHKCU('Software\\Microsoft\\GameBar', 'UseNexusForGameBarEnabled', 0);
-      if (ok1) {
+      const ok = await setHKCU(GAMECONFIG, 'GameDVR_Enabled', 0);
+      await setHKCU(GAMEBAR, 'UseNexusForGameBarEnabled', 0);
+      if (ok) {
         results.gameDVRDisabled = true;
         results.operations.push('Game DVR 비활성화 완료 (게임 성능 향상)');
       }
@@ -424,10 +384,10 @@ async function optimizeWithWindowsAPI(options = {}) {
       results.errors.push({ action: 'gameDVR', error: error.message });
     }
 
-    // 4. 시각 효과 성능 우선 (HKCU - 애니메이션/그림자 최소화, 관리자 권한 불필요)
+    // 4. 시각 효과 성능 우선 (애니메이션/그림자 최소화)
+    onProgress(62, '시각 효과 성능 우선 설정 중...');
     try {
-      const ok = await setHKCU('Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\VisualEffects', 'VisualFXSetting', 2);
-      if (ok) {
+      if (await setHKCU(VISUALFX, 'VisualFXSetting', 2)) {
         results.visualEffectsOptimized = true;
         results.operations.push('시각 효과 성능 우선 설정 완료');
       }
@@ -435,77 +395,27 @@ async function optimizeWithWindowsAPI(options = {}) {
       results.errors.push({ action: 'visualEffects', error: error.message });
     }
 
-    // 5. 메모리 최적화 (백그라운드 프로세스 우선순위 조정 + GC - 관리자 권한 불필요)
-    try {
-      const memoryScript = `
-        $processes = Get-Process | Where-Object { $_.WorkingSet -gt 100MB -and $_.PriorityClass -ne 'High' -and $_.ProcessName -ne 'svchost' }
-        foreach ($proc in $processes) {
-          try {
-            $proc.PriorityClass = 'BelowNormal'
-          } catch { }
-        }
-        [System.GC]::Collect()
-        [System.GC]::WaitForPendingFinalizers()
-        [System.GC]::Collect()
-      `;
+    await applyUserParams();
 
-      await execAsync(
-        `powershell -NoProfile -ExecutionPolicy Bypass -Command "chcp 65001 > $null; [Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${memoryScript}"`,
-        { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 * 4 }
-      ).catch(() => {});
+    // 5. 메모리 최적화 (백그라운드 프로세스 우선순위 조정)
+    onProgress(78, '메모리 최적화 중...');
+    await setBackgroundPriority('BelowNormal');
+    results.memoryOptimized = true;
+    results.operations.push('메모리 최적화 완료 (프로세스 우선순위 조정)');
 
-      results.memoryOptimized = true;
-      results.operations.push('메모리 최적화 완료 (프로세스 우선순위 조정)');
-    } catch (error) {
-      results.errors.push({ action: 'memoryOptimization', error: error.message });
-    }
-
-    // 6. DNS 캐시 플러시 (실패는 무시)
-    try {
-      await execAsync('ipconfig /flushdns', { timeout: 5000 }).catch(() => {});
+    // 6. DNS 캐시 플러시 (되돌릴 대상 아님)
+    // 실패해도 true로 밀어 넣지 않는다 — 안 된 걸 됐다고 보고하면 안 된다.
+    onProgress(92, 'DNS 캐시 플러시 중...');
+    const dnsFlushed = await execAsync('ipconfig /flushdns', { timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (dnsFlushed) {
       results.dnsFlushed = true;
       results.operations.push('DNS 캐시 플러시 완료');
-    } catch { /* 무시 */ }
-
-    // ── 이하: 이미 관리자 권한으로 실행 중일 때만 추가 적용 (UAC 요청하지 않음) ──
-    if (isAdmin) {
-      // 서비스 최적화
-      try {
-        const servicesToDisable = ['Fax', 'WSearch', 'SysMain'];
-        for (const serviceName of servicesToDisable) {
-          const { stdout } = await execAsync(`sc query "${serviceName}"`, { encoding: 'utf8', timeout: 5000 }).catch(() => ({ stdout: '' }));
-          if (stdout.includes('RUNNING')) {
-            await execAsync(`sc stop "${serviceName}"`, { timeout: 5000 }).catch(() => {});
-            await execAsync(`sc config "${serviceName}" start= disabled`, { timeout: 5000 }).catch(() => {});
-            results.operations.push(`서비스 "${serviceName}" 비활성화 완료`);
-          }
-        }
-        results.servicesOptimized = true;
-      } catch (error) {
-        results.errors.push({ action: 'servicesOptimization', error: error.message });
-      }
-
-      // Prefetch/Superfetch
-      try {
-        const prefetchKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters',
-        });
-        await new Promise((resolve) => prefetchKey.set('EnablePrefetcher', Registry.REG_DWORD, '0', () => resolve()));
-        await new Promise((resolve) => prefetchKey.set('EnableSuperfetch', Registry.REG_DWORD, '0', () => resolve()));
-        results.prefetchOptimized = true;
-        results.operations.push('Prefetch/Superfetch 최적화 완료');
-      } catch (error) {
-        results.errors.push({ action: 'prefetchOptimization', error: error.message });
-      }
-
-      // 디스크 조각 모음/TRIM
-      try {
-        await execAsync('defrag C: /O /H', { timeout: 600000, maxBuffer: 1024 * 1024 * 20 }).catch(() => {});
-        results.diskOptimized = true;
-        results.operations.push('디스크 최적화 완료');
-      } catch { /* 무시 */ }
     }
+
+    optimizationState.markEnabled(WINDOWS_BOOST_STATE_KEY, snapshot);
+    onProgress(100, '완료');
 
     if (results.errors.length > 0) {
       results.success = false;
@@ -518,59 +428,55 @@ async function optimizeWithWindowsAPI(options = {}) {
   return results;
 }
 
-// 애플리케이션 설치 및 서비스 관리
-async function manageApplicationsAndServices(options = {}) {
+// Windows Boost 해제 — ON을 누르기 직전의 값으로 정확히 되돌린다.
+async function restoreWindowsDefaults(onProgress = () => {}) {
   const results = {
     success: true,
     operations: [],
     errors: [],
-    gamesListed: [],
-    servicesManaged: false,
   };
 
   try {
-    // 게임 탐색기 게임 목록 가져오기
-    try {
-      const games = await getGameExplorerGames();
-      results.gamesListed = games;
-      results.operations.push(`게임 탐색기에서 ${games.length}개 게임 발견`);
-    } catch (error) {
-      results.errors.push({ action: 'getGameExplorerGames', error: error.message });
+    const snapshot = optimizationState.getSnapshot(WINDOWS_BOOST_STATE_KEY);
+
+    if (!snapshot) {
+      // ON을 거치지 않았거나 저장 파일이 사라진 경우 — 되돌릴 기준이 없다.
+      // 임의의 "기본값"을 써 넣으면 켜기 전에 없던 설정을 만들어내므로 아무것도 하지 않는다.
+      optimizationState.markDisabled(WINDOWS_BOOST_STATE_KEY);
+      onProgress(100, '완료');
+      results.operations.push('되돌릴 백업이 없어 시스템 설정은 변경하지 않았습니다');
+      return results;
     }
 
-    // 서비스 목록 가져오기
-    if (options.requestAdminPermission) {
-      try {
-        const { stdout } = await execAsync(
-          'powershell -Command "Get-Service | Where-Object { $_.Status -eq \'Running\' } | Select-Object Name, DisplayName, Status | ConvertTo-Json"',
-          { encoding: 'utf8', maxBuffer: 1024 * 1024 * 10 }
-        ).catch(() => ({ stdout: '[]' }));
-
-        try {
-          const services = JSON.parse(stdout || '[]');
-          const serviceList = Array.isArray(services) ? services : (services ? [services] : []);
-          results.operations.push(`실행 중인 서비스 ${serviceList.length}개 발견`);
-          results.servicesManaged = true;
-        } catch {
-          results.servicesManaged = false;
-        }
-      } catch (error) {
-        results.errors.push({ action: 'getServices', error: error.message });
-      }
+    onProgress(35, '레지스트리 설정 복원 중...');
+    const restore = await registrySnapshot.restore(snapshot.values);
+    results.operations.push(
+      `레지스트리 설정 ${restore.restored}개 복원` +
+        (restore.deleted ? `, ${restore.deleted}개 삭제(켜기 전엔 없던 값)` : '') +
+        (restore.skipped ? `, ${restore.skipped}개 건너뜀(백업 실패)` : '')
+    );
+    if (restore.failed > 0) {
+      results.errors.push({ action: 'registryRestore', error: `${restore.failed}개 복원 실패` });
     }
 
-    if (results.errors.length > 0) {
-      results.success = false;
-    }
+    onProgress(65, '설정 즉시 반영 중...');
+    await applyUserParams();
+
+    onProgress(85, '프로세스 우선순위 복원 중...');
+    await setBackgroundPriority('Normal');
+    results.operations.push('프로세스 우선순위 복원 (Normal)');
+
+    optimizationState.markDisabled(WINDOWS_BOOST_STATE_KEY);
+    onProgress(100, '완료');
   } catch (error) {
     results.success = false;
-    results.errors.push({ action: 'manageApplicationsAndServices', error: error.message });
+    results.errors.push({ action: 'restoreWindowsDefaults', error: error.message });
   }
 
   return results;
 }
 
-// Windows API로 디렉토리 검색
+
 async function findDirectory() {
   try {
     // [고도화] 존재하지 않던 searchDirectoryWithWindowsAPI 호출로 항상 예외였음.
@@ -605,9 +511,7 @@ module.exports = {
   clean,
   DEFAULT_PATH,
   findDirectory,
-  getGameExplorerGames,
-  installGameToExplorer,
-  uninstallGameFromExplorer,
   optimizeWithWindowsAPI,
-  manageApplicationsAndServices,
+  restoreWindowsDefaults,
+  isSafeToDeleteTempEntry, // 테스트용 — 임시 파일 삭제 가드를 고정한다
 };

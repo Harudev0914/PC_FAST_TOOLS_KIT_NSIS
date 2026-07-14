@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import TitleBar from './TitleBar';
 import SmartOptimization from './SmartOptimization';
 import WindowsBoost from './WindowsBoost';
@@ -6,6 +6,11 @@ import DeltaForceCleaner from './DeltaForceCleaner';
 import SoundBoost from './SoundBoost';
 import GameMode from './GameMode';
 import SoftwareUpdater from './SoftwareUpdater';
+import {
+  startOptimizationProgress,
+  updateOptimizationProgress,
+  endOptimizationProgress,
+} from '../hooks/useOptimizationProgress';
 import '../styles/MainPage.css';
 
 const menuItems = [
@@ -17,16 +22,32 @@ const menuItems = [
   { id: 'updates', label: 'Updates', icon: '' },
 ];
 
+// Fast Ping 버튼을 누르면 이 세 가지를 순서대로 모두 실행한다.
+const FAST_PING_STAGES = [
+  { method: 'batchOptimize', label: '일괄 최적화' },
+  { method: 'batchAccelerate', label: '일괄 가속화' },
+  { method: 'pingOptimize', label: '핑 최적화' },
+];
+
+// 세 단계의 결과를 하나로 합친다. 결과 패널은 boolean 플래그(cpuOptimized 등)와
+// operations/errors 배열을 읽으므로, 플래그는 OR로 누적하고 배열은 이어붙인다.
+function mergeStageResult(target, result) {
+  if (!result) return;
+  for (const [key, value] of Object.entries(result)) {
+    if (key === 'operations' || key === 'errors') {
+      if (Array.isArray(value)) target[key].push(...value);
+    } else if (key !== 'success' && typeof value === 'boolean') {
+      target[key] = target[key] || value;
+    }
+  }
+  if (result.success === false) target.success = false;
+}
+
 function MainPage() {
   const [selectedMenu, setSelectedMenu] = useState('smart');
-  const [fastPingMenuOpen, setFastPingMenuOpen] = useState(false);
   const [fastPingOptimizing, setFastPingOptimizing] = useState(false);
-  const [optimizeProgress, setOptimizeProgress] = useState({ percent: 0, currentTask: '' });
   const [optimizeResult, setOptimizeResult] = useState(null);
-  const [adminPermissionEnabled, setAdminPermissionEnabled] = useState(false);
   const [globalOptimizationProgress, setGlobalOptimizationProgress] = useState(null);
-  const fastPingMenuRef = useRef(null);
-  const actionButtonRef = useRef(null);
 
   useEffect(() => {
     // [perf] 진행률 오버레이 폴링. 200ms면 프로그레스 바 갱신엔 충분히 부드럽고
@@ -45,310 +66,47 @@ function MainPage() {
     return () => clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        fastPingMenuOpen &&
-        fastPingMenuRef.current &&
-        !fastPingMenuRef.current.contains(event.target) &&
-        actionButtonRef.current &&
-        !actionButtonRef.current.contains(event.target)
-      ) {
-        setFastPingMenuOpen(false);
-      }
-    };
+  // Fast Ping 버튼: 일괄 최적화 → 일괄 가속화 → 핑 최적화를 순서대로 모두 실행한다.
+  // 진행률은 각 단계가 실제로 끝난 시점에만 올린다(타이머로 퍼센트를 지어내지 않는다).
+  const handleFastPing = async () => {
+    if (fastPingOptimizing) return;
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [fastPingMenuOpen]);
-
-  // 일괄 최적화 핸들러
-  const handleBatchOptimize = async () => {
     if (!window.electronAPI?.fastPing) {
       console.error('Fast Ping API is not available');
-      setOptimizeResult({ errors: [{ action: 'batchOptimize', error: 'Fast Ping API를 사용할 수 없습니다.' }] });
+      setOptimizeResult({
+        success: false,
+        errors: [{ action: 'fastPing', error: 'Fast Ping API를 사용할 수 없습니다.' }],
+      });
       return;
     }
 
-    setFastPingMenuOpen(false);
     setFastPingOptimizing(true);
-    setOptimizeProgress({ percent: 0, currentTask: '일괄 최적화 시작...' });
-    
-    window.__globalOptimizationProgress = {
-      active: true,
-      component: 'batch',
-      percent: 0,
-      currentTask: '일괄 최적화 시작...',
-    };
-    
-    let progressInterval = null;
+    setOptimizeResult(null);
+    startOptimizationProgress('fastping', '최적화 진행 중', `${FAST_PING_STAGES[0].label} 중...`);
+
+    const merged = { success: true, operations: [], errors: [] };
+
     try {
-      const requestAdminPermission = adminPermissionEnabled;
-      
-      const updateProgress = (percent, task) => {
-        setOptimizeProgress({ percent, currentTask: task });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = percent;
-          window.__globalOptimizationProgress.currentTask = task;
-        }
-      };
-      
-      progressInterval = setInterval(() => {
-        setOptimizeProgress(prev => {
-          if (prev.percent >= 90) return prev;
-          const newPercent = prev.percent + 2;
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = newPercent;
-          }
-          return { ...prev, percent: newPercent };
-        });
-      }, 200);
-      
-      updateProgress(10, 'CPU 최적화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(30, '메모리 최적화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(50, '디스크 최적화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(70, '네트워크 최적화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(85, '최종 최적화 중...');
-      const result = await window.electronAPI.fastPing.batchOptimize({ requestAdminPermission });
-      
-      if (progressInterval) clearInterval(progressInterval);
-      updateProgress(100, '완료');
-      setOptimizeResult(result);
-      
-      // 완료 후 전역 상태 업데이트
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        setTimeout(() => {
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = 0;
-            window.__globalOptimizationProgress.currentTask = '';
-          }
-        }, 2000);
+      for (let i = 0; i < FAST_PING_STAGES.length; i++) {
+        const stage = FAST_PING_STAGES[i];
+        updateOptimizationProgress(
+          Math.round((i / FAST_PING_STAGES.length) * 100),
+          `${stage.label} 중...`
+        );
+        mergeStageResult(merged, await window.electronAPI.fastPing[stage.method]({}));
       }
+      updateOptimizationProgress(100, '완료');
     } catch (error) {
-      console.error('Batch Optimize error:', error);
-      if (progressInterval) clearInterval(progressInterval);
-      setOptimizeResult({ 
-        success: false,
-        errors: [{ action: 'batchOptimize', error: error.message || '알 수 없는 오류가 발생했습니다.' }] 
+      console.error('Fast Ping error:', error);
+      merged.success = false;
+      merged.errors.push({
+        action: 'fastPing',
+        error: error.message || '알 수 없는 오류가 발생했습니다.',
       });
-      setOptimizeProgress({ percent: 0, currentTask: '오류 발생' });
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        window.__globalOptimizationProgress.currentTask = '오류 발생';
-      }
     } finally {
+      setOptimizeResult(merged);
       setFastPingOptimizing(false);
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-      }
-      setTimeout(() => {
-        setOptimizeProgress({ percent: 0, currentTask: '' });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = 0;
-          window.__globalOptimizationProgress.currentTask = '';
-        }
-      }, 1000);
-    }
-  };
-
-  // 일괄 가속화 핸들러
-  const handleBatchAccelerate = async () => {
-    if (!window.electronAPI?.fastPing) {
-      console.error('Fast Ping API is not available');
-      setOptimizeResult({ errors: [{ action: 'batchAccelerate', error: 'Fast Ping API를 사용할 수 없습니다.' }] });
-      return;
-    }
-
-    setFastPingMenuOpen(false);
-    setFastPingOptimizing(true);
-    setOptimizeProgress({ percent: 0, currentTask: '일괄 가속화 시작...' });
-    
-    window.__globalOptimizationProgress = {
-      active: true,
-      component: 'batch-accelerate',
-      percent: 0,
-      currentTask: '일괄 가속화 시작...',
-    };
-    
-    let progressInterval = null;
-    try {
-      const requestAdminPermission = adminPermissionEnabled;
-      
-      const updateProgress = (percent, task) => {
-        setOptimizeProgress({ percent, currentTask: task });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = percent;
-          window.__globalOptimizationProgress.currentTask = task;
-        }
-      };
-      
-      progressInterval = setInterval(() => {
-        setOptimizeProgress(prev => {
-          if (prev.percent >= 90) return prev;
-          const newPercent = prev.percent + 2;
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = newPercent;
-          }
-          return { ...prev, percent: newPercent };
-        });
-      }, 200);
-      
-      updateProgress(15, 'CPU 고성능 모드 활성화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(35, '메모리 가속화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(55, '디스크 프리페치 가속화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(75, '네트워크 가속화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(85, '최종 가속화 중...');
-      const result = await window.electronAPI.fastPing.batchAccelerate({ requestAdminPermission });
-      
-      if (progressInterval) clearInterval(progressInterval);
-      updateProgress(100, '완료');
-      setOptimizeResult(result);
-      
-      // 완료 후 전역 상태 업데이트
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        setTimeout(() => {
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = 0;
-            window.__globalOptimizationProgress.currentTask = '';
-          }
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Batch Accelerate error:', error);
-      if (progressInterval) clearInterval(progressInterval);
-      setOptimizeResult({ 
-        success: false,
-        errors: [{ action: 'batchAccelerate', error: error.message || '알 수 없는 오류가 발생했습니다.' }] 
-      });
-      setOptimizeProgress({ percent: 0, currentTask: '오류 발생' });
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        window.__globalOptimizationProgress.currentTask = '오류 발생';
-      }
-    } finally {
-      setFastPingOptimizing(false);
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-      }
-      setTimeout(() => {
-        setOptimizeProgress({ percent: 0, currentTask: '' });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = 0;
-          window.__globalOptimizationProgress.currentTask = '';
-        }
-      }, 1000);
-    }
-  };
-
-  // 핑 최적화 핸들러
-  const handlePingOptimize = async () => {
-    if (!window.electronAPI?.fastPing) {
-      console.error('Fast Ping API is not available');
-      setOptimizeResult({ errors: [{ action: 'pingOptimize', error: 'Fast Ping API를 사용할 수 없습니다.' }] });
-      return;
-    }
-
-    setFastPingMenuOpen(false);
-    setFastPingOptimizing(true);
-    setOptimizeProgress({ percent: 0, currentTask: '핑 최적화 시작...' });
-    
-    window.__globalOptimizationProgress = {
-      active: true,
-      component: 'ping',
-      percent: 0,
-      currentTask: '핑 최적화 시작...',
-    };
-    
-    let progressInterval = null;
-    try {
-      const requestAdminPermission = adminPermissionEnabled;
-      
-      const updateProgress = (percent, task) => {
-        setOptimizeProgress({ percent, currentTask: task });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = percent;
-          window.__globalOptimizationProgress.currentTask = task;
-        }
-      };
-      
-      progressInterval = setInterval(() => {
-        setOptimizeProgress(prev => {
-          if (prev.percent >= 90) return prev;
-          const newPercent = prev.percent + 3;
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = newPercent;
-          }
-          return { ...prev, percent: newPercent };
-        });
-      }, 200);
-      
-      updateProgress(20, 'DNS 캐시 정리 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(50, 'TCP/IP 파라미터 최적화 중...');
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      updateProgress(80, '네트워크 지연 시간 최소화 중...');
-      const result = await window.electronAPI.fastPing.pingOptimize({ requestAdminPermission });
-      
-      if (progressInterval) clearInterval(progressInterval);
-      updateProgress(100, '완료');
-      setOptimizeResult(result);
-      
-      // 완료 후 전역 상태 업데이트
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        setTimeout(() => {
-          if (window.__globalOptimizationProgress) {
-            window.__globalOptimizationProgress.percent = 0;
-            window.__globalOptimizationProgress.currentTask = '';
-          }
-        }, 2000);
-      }
-    } catch (error) {
-      console.error('Ping Optimize error:', error);
-      if (progressInterval) clearInterval(progressInterval);
-      setOptimizeResult({ 
-        success: false,
-        errors: [{ action: 'pingOptimize', error: error.message || '알 수 없는 오류가 발생했습니다.' }] 
-      });
-      setOptimizeProgress({ percent: 0, currentTask: '오류 발생' });
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-        window.__globalOptimizationProgress.currentTask = '오류 발생';
-      }
-    } finally {
-      setFastPingOptimizing(false);
-      if (window.__globalOptimizationProgress) {
-        window.__globalOptimizationProgress.active = false;
-      }
-      setTimeout(() => {
-        setOptimizeProgress({ percent: 0, currentTask: '' });
-        if (window.__globalOptimizationProgress) {
-          window.__globalOptimizationProgress.percent = 0;
-          window.__globalOptimizationProgress.currentTask = '';
-        }
-      }, 1000);
+      endOptimizationProgress();
     }
   };
 
@@ -374,10 +132,7 @@ function MainPage() {
               <div
                 key={item.id}
                 className={`nav-item ${selectedMenu === item.id ? 'active' : ''}`}
-                onClick={() => {
-                  setSelectedMenu(item.id);
-                  setFastPingMenuOpen(false);
-                }}
+                onClick={() => setSelectedMenu(item.id)}
               >
                 <span className="nav-icon">{item.icon}</span>
                 <span className="nav-label">{item.label}</span>
@@ -416,7 +171,10 @@ function MainPage() {
       {globalOptimizationProgress && globalOptimizationProgress.active && (
         <div className="global-optimization-progress">
           <div className="global-progress-header">
-            <span className="global-progress-title">최적화 진행 중</span>
+            {/* 해제(OFF) 작업은 "설정 해제 중"처럼 자기 제목을 넘긴다 */}
+            <span className="global-progress-title">
+              {globalOptimizationProgress.title || '최적화 진행 중'}
+            </span>
             <span className="global-progress-component">
               {globalOptimizationProgress.component === 'cpu' && 'CPU'}
               {globalOptimizationProgress.component === 'memory' && '메모리'}
@@ -424,9 +182,9 @@ function MainPage() {
               {globalOptimizationProgress.component === 'ethernet' && '이더넷'}
               {globalOptimizationProgress.component === 'wifi' && 'Wi-Fi'}
               {globalOptimizationProgress.component?.startsWith('gpu-') && 'GPU'}
-              {globalOptimizationProgress.component === 'batch' && '일괄 최적화'}
-              {globalOptimizationProgress.component === 'batch-accelerate' && '일괄 가속화'}
-              {globalOptimizationProgress.component === 'ping' && '핑 최적화'}
+              {globalOptimizationProgress.component === 'fastping' && '전체 최적화'}
+              {globalOptimizationProgress.component === 'gamemode' && 'Game Mode'}
+              {globalOptimizationProgress.component === 'windowsboost' && 'Windows Boost'}
             </span>
           </div>
           <div className="global-progress-task">{globalOptimizationProgress.currentTask}</div>
@@ -440,44 +198,19 @@ function MainPage() {
         </div>
       )}
       
+      {/* 한 번 누르면 일괄 최적화·일괄 가속화·핑 최적화를 모두 실행한다 */}
       <button
-        ref={actionButtonRef}
         className="action-button"
-        onClick={() => setFastPingMenuOpen(!fastPingMenuOpen)}
-        title="Fast Ping 메뉴"
+        onClick={handleFastPing}
+        disabled={fastPingOptimizing}
+        title="일괄 최적화 · 일괄 가속화 · 핑 최적화 모두 실행"
       >
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M13 2L3 14h8l-1 8 10-12h-8l1-8z" fill="white" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
         </svg>
       </button>
-      
-      {/* Fast Ping Menu */}
-      {fastPingMenuOpen && (
-        <div ref={fastPingMenuRef} className="fast-ping-menu">
-          <button 
-            className="fast-ping-mode-btn batch-optimize"
-            onClick={handleBatchOptimize}
-            disabled={fastPingOptimizing}
-          >
-            일괄 최적화
-          </button>
-          <button 
-            className="fast-ping-mode-btn batch-accelerate"
-            onClick={handleBatchAccelerate}
-            disabled={fastPingOptimizing}
-          >
-            일괄 가속화
-          </button>
-          <button 
-            className="fast-ping-mode-btn ping-optimize"
-            onClick={handlePingOptimize}
-            disabled={fastPingOptimizing}
-          >
-            핑 최적화
-          </button>
 
-          {/* 최적화 결과 표시 */}
-          {optimizeResult && (
+      {optimizeResult && (
             <div className="optimize-result-panel">
               <div className="optimize-result-header">
                 <h3>최적화 결과</h3>
@@ -517,18 +250,6 @@ function MainPage() {
                           <span className="result-status">최적화 완료</span>
                         </div>
                       )}
-                      {optimizeResult.gpuOptimized && (
-                        <div className="result-item success">
-                          <span className="result-label">GPU</span>
-                          <span className="result-status">최적화 완료</span>
-                        </div>
-                      )}
-                      {optimizeResult.pingOptimized && (
-                        <div className="result-item success">
-                          <span className="result-label">핑</span>
-                          <span className="result-status">최적화 완료</span>
-                        </div>
-                      )}
                       {optimizeResult.cpuAccelerated && (
                         <div className="result-item success">
                           <span className="result-label">CPU</span>
@@ -538,12 +259,6 @@ function MainPage() {
                       {optimizeResult.memoryAccelerated && (
                         <div className="result-item success">
                           <span className="result-label">메모리</span>
-                          <span className="result-status">가속화 완료</span>
-                        </div>
-                      )}
-                      {optimizeResult.diskAccelerated && (
-                        <div className="result-item success">
-                          <span className="result-label">디스크</span>
                           <span className="result-status">가속화 완료</span>
                         </div>
                       )}
@@ -557,12 +272,6 @@ function MainPage() {
                         <div className="result-item success">
                           <span className="result-label">DNS 캐시</span>
                           <span className="result-status">정리 완료</span>
-                        </div>
-                      )}
-                      {optimizeResult.tcpOptimized && (
-                        <div className="result-item success">
-                          <span className="result-label">TCP/IP</span>
-                          <span className="result-status">최적화 완료</span>
                         </div>
                       )}
                     </div>
@@ -593,8 +302,6 @@ function MainPage() {
                 )}
               </div>
             </div>
-          )}
-        </div>
       )}
     </div>
   );

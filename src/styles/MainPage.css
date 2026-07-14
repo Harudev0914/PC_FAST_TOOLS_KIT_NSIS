@@ -119,29 +119,6 @@
   line-height: 1;
 }
 
-.language-option {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 6px;
-  transition: background-color 0.2s;
-}
-
-.language-option:hover {
-  background-color: #333;
-}
-
-.language-icon {
-  font-size: 18px;
-}
-
-.language-text {
-  flex: 1;
-}
 
 .main-content-area {
   flex: 1;
@@ -236,98 +213,6 @@
 }
 
 /* Fast Ping Menu */
-.main-page .fast-ping-menu {
-  position: fixed;
-  left: 24px;
-  bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  z-index: 999;
-  animation: slideInFromLeft 0.3s ease-out;
-}
-
-@keyframes slideInFromLeft {
-  from {
-    opacity: 0;
-    transform: translateX(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-.main-page .fast-ping-mode-btn {
-  min-width: 160px;
-  padding: 14px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.main-page .fast-ping-mode-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.main-page .fast-ping-mode-btn.game-mode {
-  background: linear-gradient(135deg, var(--info) 0%, #764ba2 100%);
-  color: white;
-}
-
-.main-page .fast-ping-mode-btn.game-mode:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
-}
-
-.main-page .fast-ping-mode-btn.work-mode {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  color: white;
-}
-
-.main-page .fast-ping-mode-btn.work-mode:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.5);
-}
-
-.main-page .fast-ping-mode-btn.batch-optimize {
-  background: linear-gradient(135deg, var(--info) 0%, #764ba2 100%);
-  color: white;
-}
-
-.main-page .fast-ping-mode-btn.batch-optimize:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.5);
-}
-
-.main-page .fast-ping-mode-btn.batch-accelerate {
-  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  color: white;
-}
-
-.main-page .fast-ping-mode-btn.batch-accelerate:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(245, 87, 108, 0.5);
-}
-
-.main-page .fast-ping-mode-btn.ping-optimize {
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  color: white;
-}
-
-.main-page .fast-ping-mode-btn.ping-optimize:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(79, 172, 254, 0.5);
-}
 
 /* 최적화 결과 패널 */
 .optimize-result-panel {

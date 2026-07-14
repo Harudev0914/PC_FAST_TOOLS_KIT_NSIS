@@ -6,13 +6,11 @@
 //   execAsync('wmic path win32_VideoController get AdapterRAM,SharedSystemMemory /format:list') - GPU 메모리 정보 조회
 //   execAsync('reg query "HKLM\\SOFTWARE\\Microsoft\\DirectX" /v Version') - DirectX 버전 조회
 // - util (promisify): 콜백 기반 함수를 Promise로 변환
-// - fs (promises): 파일 시스템 비동기 접근 (현재 미사용, 향후 확장용)
 // - platform (platformService): 플랫폼별 기능 제공. executeCommand() 함수로 Linux 명령어 실행 (nvidia-smi, lspci 등)
 //   사용 예: platformService.executeCommand('nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits') - NVIDIA GPU 사용률 조회
 //   platformService.executeCommand('lspci | grep -i vga') - Linux에서 GPU PCI 정보 조회
 
 const { execAsync } = require('./_exec');
-const fs = require('fs').promises;
 const platformService = require('./platform');
 
 async function getGPUDetails() {
@@ -152,7 +150,8 @@ async function getDirectXVersion() {
       return match[1];
     }
     
-    const { stdout: wmiStdout } = await execAsync('wmic path win32_VideoController get DriverVersion /format:list', { timeout: 5000 });
+    // 레지스트리에 버전이 없으면 드라이버 조회로 GPU 존재 여부만 확인 후 기본값 반환
+    await execAsync('wmic path win32_VideoController get DriverVersion /format:list', { timeout: 5000 });
     return '12 (FL 12.1)';
   } catch (error) {
     return 'Unknown';
@@ -180,7 +179,7 @@ async function getPhysicalLocation() {
   }
 }
 
-async function getGPUUsageByTypeLinux(engType) {
+async function getGPUUsageByTypeLinux(_engType) {
   try {
     const nvidiaResult = await platformService.executeCommand('nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null', { timeout: 5000 });
     if (nvidiaResult.success && nvidiaResult.stdout) {

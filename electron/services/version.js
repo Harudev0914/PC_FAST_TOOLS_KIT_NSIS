@@ -61,7 +61,7 @@ function getSystemId() {
  * 서버에서 최신 버전 정보 조회 (유료화 대비)
  */
 async function checkServerVersion() {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const url = new URL(VERSION_CHECK_URL);
     
     const options = {

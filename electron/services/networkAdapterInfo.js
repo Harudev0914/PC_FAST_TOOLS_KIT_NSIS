@@ -12,7 +12,6 @@
 //   - InterfaceDescription으로 연결 타입 판별 (Wireless/Wi-Fi = 802.11, 그 외 = Ethernet)
 
 const { exec } = require('child_process');
-const { execAsync: execPromise } = require('./_exec');
 const platformService = require('./platform');
 
 async function getAdapterInfo(adapterName) {

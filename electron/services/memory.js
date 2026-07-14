@@ -6,20 +6,14 @@
 // - util (promisify): 콜백 기반 함수를 Promise로 변환. execAsync는 exec의 Promise 버전
 // - os: 운영체제 정보 제공. os.totalmem(), os.freemem()으로 메모리 정보 조회
 //   사용 예: os.totalmem() - 총 메모리 크기(바이트), os.freemem() - 사용 가능한 메모리 크기(바이트)
-// - fs: 파일 시스템 접근. 메모리 관련 파일 읽기/쓰기에 사용
+// - fs: 파일 시스템 접근. 임시 PowerShell 스크립트 작성/삭제에 사용
 // - path: 파일 경로 처리. 경로 조작 및 정규화에 사용
-// - winreg (Registry): Windows 레지스트리 접근. 메모리 관리 설정 변경에 사용
-//   사용 예: new Registry({ hive, key }) - 레지스트리 키 생성, .set() - 값 설정
-// - permissions (permissionsService): 관리자 권한 확인. isAdmin() 함수로 권한 확인
-// - platform (platformService): 플랫폼별 기능 제공. isAdmin(), requestAdmin() 등 사용
+// 이 서비스는 사용자 권한(user-level)에서만 동작한다. 관리자 권한이 필요한 작업은 수행하지 않는다.
 
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { execAsync, withTimeout: timeout } = require('./_exec');
-const Registry = require('winreg');
-const permissionsService = require('./permissions');
-const platformService = require('./platform');
 
 // @memory.js (17-29)
 // getStats 함수: 메모리 통계 정보 조회
@@ -63,16 +57,16 @@ async function getProcesses() {
   try {
     const { stdout } = await execAsync('tasklist /FO CSV /NH');
     const lines = stdout.split('\n').filter(line => line.trim());
-    
+
     const processes = lines.map(line => {
       const parts = line.match(/(".*?"|[^,]+)(?=\s*,|\s*$)/g);
       if (!parts || parts.length < 5) return null;
-      
+
       const name = parts[0].replace(/"/g, '');
       const pid = parseInt(parts[1].replace(/"/g, ''));
       const memStr = parts[4].replace(/"/g, '').replace(/[^0-9]/g, '');
       const memory = parseInt(memStr) * 1024;
-      
+
       return {
         name,
         pid,
@@ -96,30 +90,19 @@ async function killProcess(pid) {
   }
 }
 
-async function optimize(options = {}) {
-  const { requestAdminPermission = false } = options;
-  
+// optimize 함수: 사용자 권한으로 가능한 메모리 최적화 수행
+// (Idle tasks / GC / 대기 메모리 정리 / 불필요한 프로세스 종료 / 워킹셋 트림)
+
+async function optimize() {
   const results = {
     success: true,
     operations: [],
     errors: [],
     standbyMemoryCleared: false,
-    pageFileOptimized: false,
-    prefetchOptimized: false,
     processesTerminated: false,
     memoryDefragmented: false,
-    virtualMemoryOptimized: false,
-    compressionOptimized: false,
-    numaOptimized: false,
-    mappedFilesOptimized: false,
-    heapOptimized: false,
     memoryPriorityOptimized: false,
-    requiresAdmin: false,
-    adminGranted: false,
   };
-
-  const isAdmin = await permissionsService.isAdmin();
-  results.adminGranted = isAdmin;
 
   try {
     const parallelTasks = [
@@ -161,10 +144,10 @@ foreach ($proc in $processes) {
   } catch {}
 }
       `.trim();
-      
+
       const tempScript = path.join(os.tmpdir(), `memory_optimize_${Date.now()}.ps1`);
       fs.writeFileSync(tempScript, psScript, 'utf8');
-      
+
       try {
         await timeout(
           execAsync(`powershell -ExecutionPolicy Bypass -File "${tempScript}"`),
@@ -181,129 +164,57 @@ foreach ($proc in $processes) {
       results.errors.push({ operation: 'Standby memory clear', error: error.message });
     }
 
-    if (isAdmin || requestAdminPermission) {
-      const adminTasks = [];
-      
-      adminTasks.push(
-        (async () => {
-          try {
-            const pageFileKey = new Registry({
-              hive: Registry.HKLM,
-              key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-            });
-            
-            await Promise.all([
-              new Promise((resolve, reject) => {
-                // [고도화] 빈 값('')은 페이지파일을 "비활성화"한다(위험). '?:\pagefile.sys'는
-                // 모든 드라이브에 대해 시스템 관리(auto) 페이지파일을 의미한다.
-                pageFileKey.set('PagingFiles', Registry.REG_MULTI_SZ, '?:\\pagefile.sys', (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                });
-              }),
-              new Promise((resolve, reject) => {
-                pageFileKey.set('SystemManagedPagefile', Registry.REG_DWORD, '1', (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                });
-              }),
-            ]);
-
-            results.pageFileOptimized = true;
-            results.operations.push('페이지파일 시스템 관리(auto)로 설정');
-          } catch (error) {
-          }
-        })()
-      );
-      
-      adminTasks.push(
-        (async () => {
-          try {
-            const prefetchKey = new Registry({
-              hive: Registry.HKLM,
-              key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management\\PrefetchParameters',
-            });
-            
-            await Promise.all([
-              new Promise((resolve, reject) => {
-                prefetchKey.set('EnablePrefetcher', Registry.REG_DWORD, '3', (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                });
-              }),
-              new Promise((resolve, reject) => {
-                prefetchKey.set('EnableSuperfetch', Registry.REG_DWORD, '3', (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                });
-              }),
-            ]);
-            
-            results.prefetchOptimized = true;
-            results.operations.push('Memory prefetch optimized');
-          } catch (error) {
-            results.requiresAdmin = true;
-            results.errors.push({ operation: 'Prefetch optimization', error: error.message, requiresAdmin: true });
-          }
-        })()
-      );
-      
-      await Promise.all(adminTasks.map(task => timeout(task, 5000).catch(() => {})));
-    } else {
-      results.operations.push('Page file/Prefetch 최적화 skipped (requires admin)');
-    }
-
     try {
       const { stdout } = await execAsync('wmic process get Name,ProcessId,WorkingSetSize /format:csv');
       const lines = stdout.split('\n').filter(line => line.trim() && line.includes(',') && !line.includes('Node,'));
-      
+
       const protectedProcesses = [
-        'System', 'smss', 'csrss', 'winlogon', 'services', 'lsass', 'svchost', 
+        'System', 'smss', 'csrss', 'winlogon', 'services', 'lsass', 'svchost',
         'dwm', 'explorer', 'chrome', 'firefox', 'edge', 'msedge',
         'Code.exe', 'devenv.exe', 'vscode.exe',
       ];
       const protectedLower = protectedProcesses.map(p => p.toLowerCase());
-      
+
       const unnecessaryProcesses = [
         'OneDrive', 'Skype', 'Spotify', 'Discord', 'Steam', 'EpicGamesLauncher',
         'AdobeUpdater', 'AdobeARM', 'iTunesHelper', 'QuickTime', 'java', 'javaw',
         'GoogleUpdate', 'Zoom', 'Teams', 'Slack',
       ];
       const unnecessaryLower = unnecessaryProcesses.map(u => u.toLowerCase());
-      
+
       const candidates = lines
         .map(line => {
           try {
             const parts = line.split(',');
             if (parts.length < 3) return null;
-            
+
             const name = parts[parts.length - 3]?.trim();
             const pid = parts[parts.length - 2]?.trim();
             const memoryStr = parts[parts.length - 4]?.trim();
             const memory = parseInt(memoryStr || '0');
-            
+
             if (!name || !pid || isNaN(parseInt(pid)) || memory < 100 * 1024 * 1024) return null;
-            
+
             const nameLower = name.toLowerCase();
-            
+
             if (protectedLower.some(protected => nameLower.includes(protected))) return null;
-            
+
             if (!unnecessaryLower.some(unnecessary => nameLower.includes(unnecessary))) return null;
-            
+
             return { name, pid, memory };
           } catch (lineError) {
             return null;
           }
         })
         .filter(c => c !== null);
-      
+
       candidates.sort((a, b) => b.memory - a.memory);
       const toKill = candidates.slice(0, 5);
-      
+
       let freedMemory = 0;
       let killedCount = 0;
-      
-      const killPromises = toKill.map(proc => 
+
+      const killPromises = toKill.map(proc =>
         timeout(
           killProcess(proc.pid).then(() => {
             freedMemory += proc.memory;
@@ -312,9 +223,9 @@ foreach ($proc in $processes) {
           2000
         ).catch(() => {})
       );
-      
+
       await Promise.all(killPromises);
-      
+
       if (killedCount > 0) {
         results.processesTerminated = true;
         results.freedMemory = freedMemory;
@@ -334,7 +245,7 @@ foreach ($proc in $processes) {
                    !nameLower.includes('edge');
           })
           .slice(0, 5);
-        
+
         let freedMemory = 0;
         for (const proc of safeToKill) {
           try {
@@ -343,7 +254,7 @@ foreach ($proc in $processes) {
           } catch (error) {
           }
         }
-        
+
         if (safeToKill.length > 0) {
           results.processesTerminated = true;
           results.freedMemory = freedMemory;
@@ -378,186 +289,41 @@ Get-Process | Where-Object { $_.WorkingSet -gt 50MB -and $_.Id -ne $PID } | ForE
       results.errors.push({ operation: 'Memory defragmentation', error: error.message });
     }
 
-    if (isAdmin || requestAdminPermission) {
-      try {
-        const psCommand = `
-          $computersys = Get-WmiObject Win32_ComputerSystem -EnableAllPrivileges;
-          $computersys.AutomaticManagedPagefile = $true;
-          $computersys.Put();
-        `;
-        await execAsync(`powershell -Command "${psCommand.replace(/\n/g, ' ').replace(/\s+/g, ' ')}"`);
-        
-        results.virtualMemoryOptimized = true;
-      results.operations.push('Virtual memory optimized');
-    } catch (error) {
-    }
-  } else {
-    results.operations.push('Virtual memory 최적화 skipped (requires admin)');
-  }
+    try {
+      // 메모리 우선순위 조정 — 사용자 소유 프로세스의 우선순위 조정이라 사용자 권한으로 동작한다.
+      // 실제 조정된 프로세스 수를 세어 0개면 성공으로 보고하지 않는다(허위 성공 보고 방지).
+      const psCommand = `
+$ok = 0
+$importantProcs = Get-Process -Name "explorer","dwm" -ErrorAction SilentlyContinue
+foreach ($proc in $importantProcs) {
+  try {
+    $proc.PriorityClass = "High"
+    $ok++
+  } catch {}
+}
+Write-Output $ok
+      `.trim();
 
-    if (isAdmin || requestAdminPermission) {
-      try {
-        const memoryManagementKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-        });
-        
-        await new Promise((resolve, reject) => {
-          memoryManagementKey.set('DisableCompression', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        // [고도화] DisableCompression은 현대 Windows에서 무시되는 레거시 값이라 효과가 없다.
-        // 성공으로 보고하지 않는다(오탐 방지). 실제 압축 제어는 Disable-MMAgent가 필요.
-    } catch (error) {
-    }
-  } else {
-    results.operations.push('Memory compression 최적화 skipped (requires admin)');
-  }
+      const tempScript = path.join(os.tmpdir(), `memory_priority_${Date.now()}.ps1`);
+      fs.writeFileSync(tempScript, psCommand, 'utf8');
 
-    if (isAdmin || requestAdminPermission) {
       try {
-        const psCommand = `
-          $numaNodes = Get-NumaNode -ErrorAction SilentlyContinue;
-          if ($numaNodes) {
-            $memoryManagementKey = "HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management";
-            Set-ItemProperty -Path $memoryManagementKey -Name "NumaTopology" -Value 1 -ErrorAction SilentlyContinue;
-          }
-        `;
-        await execAsync(`powershell -Command "${psCommand.replace(/\n/g, ' ').replace(/\s+/g, ' ')}"`);
-        
-        const memoryManagementKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-        });
-        
-        await new Promise((resolve, reject) => {
-          memoryManagementKey.set('NumaTopology', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        // [고도화] Get-NumaNode는 존재하지 않는 cmdlet이고 NumaTopology도 미인식 값이라
-        // 둘 다 무효 → 성공으로 보고하지 않는다(오탐 방지).
-    } catch (error) {
-    }
-  } else {
-    results.operations.push('NUMA 최적화 skipped (requires admin)');
-  }
-
-    if (isAdmin || requestAdminPermission) {
-      try {
-        const memoryManagementKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-        });
-        
-        await new Promise((resolve, reject) => {
-          memoryManagementKey.set('LargeSystemCache', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        results.mappedFilesOptimized = true;
-      results.operations.push('Memory mapped files optimized');
-    } catch (error) {
-    }
-  } else {
-    results.operations.push('Memory mapped files 최적화 skipped (requires admin)');
-  }
-
-    if (isAdmin || requestAdminPermission) {
-      try {
-        const memoryManagementKey = new Registry({
-          hive: Registry.HKLM,
-          key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-        });
-        
-        await new Promise((resolve, reject) => {
-          memoryManagementKey.set('HeapDeCommitFreeBlockThreshold', Registry.REG_DWORD, '0x00040000', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        });
-        
-        const psCommand = `
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-          public class HeapAPI {
-            [DllImport("kernel32.dll")]
-            public static extern IntPtr GetProcessHeap();
-            [DllImport("kernel32.dll")]
-            public static extern bool HeapSetInformation(IntPtr hHeap, int HeapInformationClass, IntPtr lpHeapInformation, UIntPtr dwHeapInformationSize);
-          }
-          '@
-          $heap = [HeapAPI]::GetProcessHeap();
-          [HeapAPI]::HeapSetInformation($heap, 0, [IntPtr]::Zero, [UIntPtr]::Zero) | Out-Null
-        `;
-        
-        const tempScript = path.join(os.tmpdir(), `heap_optimize_${Date.now()}.ps1`);
-        fs.writeFileSync(tempScript, psCommand, 'utf8');
-        
-        try {
-          await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempScript}"`);
-          results.heapOptimized = true;
-          results.operations.push('Heap memory optimized');
-        } finally {
-          try {
-            fs.unlinkSync(tempScript);
-          } catch (e) {}
-        }
-      } catch (error) {
-      }
-    } else {
-      results.operations.push('Heap 최적화 skipped (requires admin)');
-    }
-
-    if (isAdmin || requestAdminPermission) {
-      try {
-        const psCommand = `
-          Add-Type -TypeDefinition @'
-          using System;
-          using System.Runtime.InteropServices;
-          public class MemoryPriorityAPI {
-            [DllImport("kernel32.dll")]
-            public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, int dwMinimumWorkingSetSize, int dwMaximumWorkingSetSize);
-            [DllImport("kernel32.dll")]
-            public static extern IntPtr GetCurrentProcess();
-          }
-          '@
-          $process = [MemoryPriorityAPI]::GetCurrentProcess();
-          [MemoryPriorityAPI]::SetProcessWorkingSetSize($process, -1, -1) | Out-Null
-          
-          $importantProcs = Get-Process -Name "explorer","dwm" -ErrorAction SilentlyContinue;
-          foreach ($proc in $importantProcs) {
-            try {
-              $proc.PriorityClass = "High";
-            } catch {}
-          }
-        `;
-        
-        const tempScript = path.join(os.tmpdir(), `memory_priority_${Date.now()}.ps1`);
-        fs.writeFileSync(tempScript, psCommand, 'utf8');
-        
-        try {
-          await execAsync(`powershell -ExecutionPolicy Bypass -File "${tempScript}"`);
+        const { stdout } = await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScript}"`, { timeout: 10000 });
+        const adjusted = parseInt(String(stdout).trim(), 10) || 0;
+        if (adjusted > 0) {
           results.memoryPriorityOptimized = true;
-          results.operations.push('Memory priority optimized');
-        } finally {
-          try {
-            fs.unlinkSync(tempScript);
-          } catch (e) {}
+          results.operations.push(`Memory priority optimized (${adjusted}개 프로세스)`);
+        } else {
+          results.errors.push({ operation: 'Memory priority', error: '우선순위를 조정할 수 있는 프로세스가 없음' });
         }
-        } catch (error) {
-        }
-      } else {
-        results.operations.push('Memory priority 최적화 skipped (requires admin)');
+      } finally {
+        try {
+          fs.unlinkSync(tempScript);
+        } catch (e) {}
       }
+    } catch (error) {
+      results.errors.push({ operation: 'Memory priority', error: error.message });
+    }
 
     return results;
   } catch (error) {

@@ -13,8 +13,6 @@ const { execAsync, execFileAsync } = require('./_exec');
 const { parseWingetUpgradeTable } = require('./wingetParse');
 
 async function getInstalled() {
-  const software = [];
-
   try {
     try {
       const { stdout } = await execAsync(

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const https = require('https');
 
@@ -219,26 +219,20 @@ function createWindow() {
 }
 
 // IPC Handlers - 앱 준비 전에 등록
-const cleanerService = require('./services/cleaner');
 const memoryService = require('./services/memory');
 const networkService = require('./services/network');
 const audioService = require('./services/audio');
 const gamingService = require('./services/gaming');
-const recoveryService = require('./services/recovery');
+const optimizationStateService = require('./services/optimizationState');
 const updaterService = require('./services/updater');
 const driverService = require('./services/driver');
 const cpuService = require('./services/cpu');
-const cpuOptimizeService = require('./services/cpuOptimize');
-const historyService = require('./services/history');
-const permissionsService = require('./services/permissions');
 const systemStatsService = require('./services/systemStats');
 const diskService = require('./services/disk');
 const platformService = require('./services/platform');
 const fastPingService = require('./services/fastPing');
 const gpuOptimizeService = require('./services/gpuOptimize');
-const computeOptimizationService = require('./services/computeOptimization');
 const deltaForceCleanerService = require('./services/deltaForceCleaner');
-const networkOptimizationService = require('./services/networkOptimization');
 const versionService = require('./services/version');
 
 // [정리] PowerShell 기반 공유 메모리 IPC 할당자(ipcAllocator/sharedMemory)는 제거됨.
@@ -260,67 +254,38 @@ function handle(channel, fn, errorExtra = { success: false }) {
   });
 }
 
+// 오래 걸리는 최적화 작업이 각 단계를 렌더러에 알리는 콜백을 만든다. UI는 이 이벤트로
+// 진행률 바와 "지금 무슨 작업 중인지"를 표시한다. 요청을 보낸 창이 이미 닫힌 뒤에
+// send를 호출하면 예외가 나므로 destroyed 여부를 확인한다.
+function progressEmitter(event, component) {
+  return (percent, task) => {
+    if (event.sender.isDestroyed()) return;
+    event.sender.send('optimization:progress', { component, percent, task });
+  };
+}
+
 // Version IPC
-handle('version:getCurrentVersion', async () => {
-  return { success: true, version: versionService.getCurrentVersion() };
-});
 
-handle('version:checkVersion', async (event, options) => {
-  return await versionService.checkVersion(options || {});
-});
 
-handle('version:getTrackingInfo', async () => {
-  return { success: true, trackingInfo: versionService.getTrackingInfo() };
-});
 
-handle('version:validateLicense', async () => {
-  return { success: true, license: versionService.validateLicense() };
-});
 
 // Cleaner IPC
-handle('cleaner:scan', async () => {
-  return await cleanerService.scan();
-}, { success: false, files: [], totalSize: 0, errors: [] });
 
-handle('cleaner:clean', async (event, options) => {
-  return await cleanerService.clean(options || {});
-}, { success: false, cleaned: 0, freed: 0, errors: [] });
 
 // Memory IPC
-handle('memory:getStats', async () => {
-  return await memoryService.getStats();
-});
 
 handle('memory:optimize', async (event, options) => {
   return await memoryService.optimize(options || {});
 });
 
-handle('memory:getProcesses', async () => {
-  return await memoryService.getProcesses();
-}, { success: false, processes: [] });
 
-handle('memory:killProcess', async (event, pid) => {
-  if (!pid || typeof pid !== 'number') {
-    return { success: false, error: 'Invalid process ID' };
-  }
-  return await memoryService.killProcess(pid);
-});
 
 // Audio IPC
 handle('audio:getDevices', async () => {
   return await audioService.getDevices();
 }, { success: false, devices: [] });
 
-handle('audio:setVolume', async (event, deviceId, volume) => {
-  if (!deviceId || typeof volume !== 'number' || volume < 0 || volume > 100) {
-    return { success: false, error: 'Invalid parameters' };
-  }
-  return await audioService.setVolume(deviceId, volume);
-});
 
-handle('audio:boost', async (event, enabled) => {
-  return await audioService.boost(enabled === true);
-});
 
 handle('audio:getSettings', async () => {
   return await audioService.getSettings();
@@ -337,9 +302,6 @@ handle('audio:getEQPresets', async () => {
   return await audioService.getEQPresets();
 }, { success: false, presets: [] });
 
-handle('audio:detectModels', async () => {
-  return await audioService.detectModels();
-}, { success: false, models: [] });
 
 // 실제 EQ/베이스를 시스템 전역에 적용하는 Equalizer APO 설치 여부 확인
 handle('audio:isEqualizerApoInstalled', async () => {
@@ -347,10 +309,6 @@ handle('audio:isEqualizerApoInstalled', async () => {
 }, { installed: false });
 
 // Equalizer APO 공식 다운로드 페이지를 기본 브라우저로 연다 (URL은 고정 — 렌더러 입력 아님)
-handle('audio:openEqualizerApoDownload', async () => {
-  await shell.openExternal('https://sourceforge.net/projects/equalizerapo/');
-  return { success: true };
-});
 
 // [실제 동작] 공식 Equalizer APO 설치 프로그램을 직접 다운로드해 실행한다. 사용자는 표준 설치
 // UI(장치 선택)와 재부팅만 진행하면 이후 EQ/베이스가 시스템 전역에 실제 적용된다. URL은 고정.
@@ -388,50 +346,25 @@ ipcMain.handle('audio:installEqualizerApo', async () => {
   }
 });
 
-// Gaming IPC
-handle('gaming:enable', async () => {
-  return await gamingService.enable();
-});
-
-handle('gaming:disable', async () => {
-  return await gamingService.disable();
-});
-
-handle('gaming:getStatus', async () => {
-  return await gamingService.getStatus();
+// 토글 적용 상태 조회 — 패널이 마운트될 때 ON/OFF를 복원하는 데 쓴다.
+handle('optimization:getStatus', async (event, key) => {
+  return { success: true, enabled: optimizationStateService.isEnabled(key) };
 }, { success: false, enabled: false });
 
-handle('gaming:enableGameMode', async (event, options) => {
-  return await gamingService.enableGameMode(options || {});
+// Gaming IPC
+handle('gaming:enableGameMode', async (event) => {
+  return await gamingService.enableGameMode(progressEmitter(event, 'gamemode'));
 });
 
-handle('gaming:disableGameMode', async () => {
-  return await gamingService.disableGameMode();
+handle('gaming:disableGameMode', async (event) => {
+  return await gamingService.disableGameMode(progressEmitter(event, 'gamemode'));
 });
 
 // Recovery IPC
-handle('recovery:scan', async (event, options) => {
-  return await recoveryService.scan(options || {});
-}, { success: false, files: [] });
 
-handle('recovery:recover', async (event, filePath, destination) => {
-  if (!filePath || !destination) {
-    return { success: false, error: 'Invalid file path or destination' };
-  }
-  return await recoveryService.recover(filePath, destination);
-});
 
 // Updater IPC
-handle('updater:getInstalled', async () => {
-  return await updaterService.getInstalled();
-}, { success: false, software: [] });
 
-handle('updater:checkUpdates', async (event, software) => {
-  if (!software || typeof software !== 'object') {
-    return { success: false, error: 'Invalid software object' };
-  }
-  return await updaterService.checkUpdates(software);
-});
 
 handle('updater:checkAllUpdates', async () => {
   return await updaterService.checkAllUpdates();
@@ -449,9 +382,6 @@ handle('driver:getDrivers', async () => {
   return await driverService.getDrivers();
 }, { success: false, drivers: [] });
 
-handle('driver:checkUpdates', async () => {
-  return await driverService.checkUpdates();
-}, { success: false, updates: [] });
 
 handle('driver:update', async (event, driver) => {
   if (!driver || typeof driver !== 'object') {
@@ -461,43 +391,16 @@ handle('driver:update', async (event, driver) => {
 });
 
 // CPU IPC
-handle('cpu:getStats', async () => {
-  return await cpuService.getStats();
-});
 
 handle('cpu:optimize', async () => {
   return await cpuService.optimize();
 });
 
-handle('cpu:optimizeSafe', async () => {
-  return await cpuOptimizeService.optimize();
-});
 
-handle('cpu:setPriority', async (event, pid, priority) => {
-  if (!pid || typeof pid !== 'number' || !priority || typeof priority !== 'string') {
-    return { success: false, error: 'Invalid process ID or priority' };
-  }
-  return await cpuService.setPriority(pid, priority);
-});
 
 // History IPC
-handle('history:getTypes', async () => {
-  return await historyService.getTypes();
-}, { success: false, types: [] });
 
-handle('history:clear', async (event, types) => {
-  if (!Array.isArray(types)) {
-    return { success: false, error: 'Invalid types array' };
-  }
-  return await historyService.clear(types);
-});
 
-handle('history:schedule', async (event, config) => {
-  if (!config || typeof config !== 'object') {
-    return { success: false, error: 'Invalid config object' };
-  }
-  return await historyService.schedule(config);
-});
 
 // System Stats IPC
 handle('systemStats:getAll', async () => {
@@ -512,41 +415,17 @@ handle('disk:optimize', async (event, options) => {
 });
 
 // Network IPC
-handle('network:getStats', async () => {
-  return await networkService.getStats();
-});
 
 handle('network:optimize', async (event, options) => {
   return await networkService.optimize(options || {});
 });
 
-handle('network:pingTest', async (event, host) => {
-  if (!host || typeof host !== 'string') {
-    return { success: false, error: 'Invalid host' };
-  }
-  return await networkService.pingTest(host);
-});
 
 // Network Optimization API IPC (QUIC, ENet, IOCP)
-handle('networkOptimization:detectAPIs', async () => {
-  return await networkOptimizationService.detectAvailableAPIs();
-});
 
-handle('networkOptimization:enableQUIC', async (event, options) => {
-  return await networkOptimizationService.enableQUIC(options || {});
-});
 
-handle('networkOptimization:optimizeENet', async (event, options) => {
-  return await networkOptimizationService.optimizeENet(options || {});
-});
 
-handle('networkOptimization:optimizeIOCP', async (event, options) => {
-  return await networkOptimizationService.optimizeIOCP(options || {});
-});
 
-handle('networkOptimization:optimizeAll', async (event, options) => {
-  return await networkOptimizationService.optimizeAll(options || {});
-});
 
 // GPU Optimization IPC
 handle('gpu:optimize', async (event, options) => {
@@ -554,34 +433,13 @@ handle('gpu:optimize', async (event, options) => {
 });
 
 // Compute Optimization IPC (OpenCL, CUDA, Intel oneAPI)
-handle('computeOptimization:optimizeOpenCL', async (event, options) => {
-  return await computeOptimizationService.optimizeOpenCL(options || {});
-});
 
-handle('computeOptimization:optimizeCUDA', async (event, options) => {
-  return await computeOptimizationService.optimizeCUDA(options || {});
-});
 
-handle('computeOptimization:optimizeIntelOneAPI', async (event, options) => {
-  return await computeOptimizationService.optimizeIntelOneAPI(options || {});
-});
 
-handle('computeOptimization:optimizeAll', async (event, options) => {
-  return await computeOptimizationService.optimizeAll(options || {});
-});
 
-handle('computeOptimization:detectLibraries', async () => {
-  return await computeOptimizationService.detectLibraries();
-}, { success: false, libraries: {} });
 
 // Fast Ping IPC
-handle('fastPing:optimizeGameMode', async (event, options) => {
-  return await fastPingService.optimizeGameMode(options || {});
-});
 
-handle('fastPing:optimizeWorkMode', async (event, options) => {
-  return await fastPingService.optimizeWorkMode(options || {});
-});
 
 handle('fastPing:batchOptimize', async (event, options) => {
   return await fastPingService.batchOptimize(options || {});
@@ -614,79 +472,21 @@ handle('deltaForceCleaner:findDirectory', async () => {
   return await deltaForceCleanerService.findDirectory();
 });
 
-handle('deltaForceCleaner:getGameExplorerGames', async () => {
-  return await deltaForceCleanerService.getGameExplorerGames();
-}, { success: false, games: [] });
 
-handle('deltaForceCleaner:installGameToExplorer', async (event, gamePath, gdfPath) => {
-  if (!gamePath || !gdfPath) {
-    return { success: false, error: 'Invalid game path or GDF path' };
-  }
-  return await deltaForceCleanerService.installGameToExplorer(gamePath, gdfPath);
+
+
+handle('deltaForceCleaner:optimizeWithWindowsAPI', async (event) => {
+  return await deltaForceCleanerService.optimizeWithWindowsAPI(progressEmitter(event, 'windowsboost'));
 });
 
-handle('deltaForceCleaner:uninstallGameFromExplorer', async (event, instanceID) => {
-  if (!instanceID || typeof instanceID !== 'string') {
-    return { success: false, error: 'Invalid instance ID' };
-  }
-  return await deltaForceCleanerService.uninstallGameFromExplorer(instanceID);
+handle('deltaForceCleaner:restoreWindowsDefaults', async (event) => {
+  return await deltaForceCleanerService.restoreWindowsDefaults(progressEmitter(event, 'windowsboost'));
 });
 
-handle('deltaForceCleaner:optimizeWithWindowsAPI', async (event, options) => {
-  return await deltaForceCleanerService.optimizeWithWindowsAPI(options || {});
-});
-
-handle('deltaForceCleaner:manageApplicationsAndServices', async (event, options) => {
-  return await deltaForceCleanerService.manageApplicationsAndServices(options || {});
-});
 
 // Permissions IPC
-handle('permissions:isAdmin', async () => {
-  return { success: true, isAdmin: await platformService.isAdmin() };
-}, { success: false, isAdmin: false });
 
-handle('platform:getOSInfo', async () => {
-  return { success: true, osInfo: platformService.getOSInfo() };
-});
-handle('permissions:requestAdmin', async () => {
-  // 현재 관리자 권한 상태 확인
-  const isAdmin = await platformService.isAdmin();
 
-  if (isAdmin) {
-    return {
-      success: true,
-      message: '관리자 권한이 활성화되어 있습니다.',
-      isAdmin: true,
-    };
-  }
-
-  // 관리자 권한이 없으면 상태만 반환 (앱 재시작 없이)
-  // 실제 관리자 권한이 필요한 작업은 별도 프로세스로 실행
-  return {
-    success: false,
-    message: '관리자 권한이 필요합니다. 관리자 권한이 필요한 작업은 별도로 실행됩니다.',
-    isAdmin: false,
-    requiresElevation: true,
-  };
-}, { success: false, isAdmin: false });
-
-handle('permissions:confirmAction', async (event, action, details) => {
-  if (!mainWindow) {
-    return { confirmed: false, error: 'Main window not available' };
-  }
-  if (!action || typeof action !== 'string') {
-    return { confirmed: false, error: 'Invalid action' };
-  }
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    buttons: ['취소', '확인'],
-    defaultId: 1,
-    title: '작업 확인',
-    message: action,
-    detail: details || '',
-  });
-  return { confirmed: result.response === 1 };
-}, { confirmed: false });
 
 // Window controls IPC
 ipcMain.handle('window:minimize', () => {
@@ -697,13 +497,6 @@ ipcMain.handle('window:minimize', () => {
   }
 });
 
-ipcMain.handle('window:maximize', () => {
-  try {
-    if (mainWindow) mainWindow.maximize();
-  } catch (error) {
-    console.error('Error in window:maximize:', error);
-  }
-});
 
 ipcMain.handle('window:toggleMaximize', () => {
   try {
@@ -739,7 +532,7 @@ app.whenReady().then(async () => {
   }
 
   // OS 체크 및 로깅
-  const osInfo = platformService.getOSInfo();
+  const osInfo = await platformService.getOSInfo();
   console.log(`OS Detected: ${osInfo.name} ${osInfo.version} (${osInfo.type})`);
   console.log(`Platform: ${osInfo.platform}, Arch: ${osInfo.arch}`);
   

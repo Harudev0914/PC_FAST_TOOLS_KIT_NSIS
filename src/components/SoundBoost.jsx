@@ -45,8 +45,7 @@ function Knob({ label, value, min, max, unit, onChange, size = 92, accent = '#35
     };
     window.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
-  };
-  const [px, py] = polar(angle);
+  };
   const [dx, dy] = polar(angle); // pointer dot near edge
   return (
     <div className="ai-knob">
@@ -191,8 +190,12 @@ function SoundBoost() {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
     const n = eqBands.length;
+    // 밴드 i의 x는 열 중심 = (i + 0.5) * (w / n). 아래 페이더도 같은 폭의 열 n개를 쓰므로
+    // (SoundBoost.css의 .ai-eq-faders 참고) 커브 노드가 페이더 캡 바로 위에 정확히 선다.
+    const bandX = (i) => (w / n) * (i + 0.5);
+
     for (let i = 0; i < n; i++) {
-      const x = (w / (n - 1)) * i;
+      const x = bandX(i);
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
     }
     // 0 dB reference
@@ -200,35 +203,38 @@ function SoundBoost() {
     ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
     // curve points
     const pts = eqBands.map((g, i) => ({
-      x: (w / (n - 1)) * i,
+      x: bandX(i),
       y: h / 2 - (Math.max(-12, Math.min(12, g)) / 12) * (h / 2 * 0.86),
     }));
-    // smooth line
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const xc = (pts[i].x + pts[i + 1].x) / 2;
-      const yc = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+
+    // 첫/마지막 노드가 가장자리에서 안쪽으로 들어와 있으므로, 양 끝은 해당 밴드의 게인을
+    // 그대로 유지한 채 캔버스 가장자리까지 평평하게 이어 붙인다(끝이 잘려 보이지 않게).
+    const traceCurve = () => {
+      ctx.beginPath();
+      ctx.moveTo(0, pts[0].y);
+      ctx.lineTo(pts[0].x, pts[0].y);
+      for (let i = 0; i < pts.length - 1; i++) {
+        const xc = (pts[i].x + pts[i + 1].x) / 2;
+        const yc = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
+      }
+      const last = pts[pts.length - 1];
+      ctx.lineTo(last.x, last.y);
+      ctx.lineTo(w, last.y);
+    };
+
     // fill under
     const grad = ctx.createLinearGradient(0, 0, 0, h);
     grad.addColorStop(0, enabled ? 'rgba(53,224,208,0.28)' : 'rgba(74,85,96,0.18)');
     grad.addColorStop(1, 'rgba(53,224,208,0)');
     ctx.save();
+    traceCurve();
     ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
     ctx.fillStyle = grad; ctx.fill();
     ctx.restore();
+
     // stroke curve again on top
-    ctx.beginPath();
-    ctx.moveTo(pts[0].x, pts[0].y);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const xc = (pts[i].x + pts[i + 1].x) / 2;
-      const yc = (pts[i].y + pts[i + 1].y) / 2;
-      ctx.quadraticCurveTo(pts[i].x, pts[i].y, xc, yc);
-    }
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+    traceCurve();
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2.4;
     ctx.shadowColor = accent;
@@ -311,12 +317,15 @@ function SoundBoost() {
             {eqBands.map((g, i) => (
               <div className="ai-fader" key={i}>
                 <div className="ai-fader-val">{g > 0 ? '+' : ''}{g}</div>
-                <input
-                  type="range" min={-12} max={12} step={1} value={g}
-                  className="ai-vfader"
-                  onChange={(e) => changeBand(i, parseInt(e.target.value))}
-                  onDoubleClick={() => changeBand(i, 0)}
-                />
+                <div className="ai-fader-slot">
+                  <input
+                    type="range" min={-12} max={12} step={1} value={g}
+                    className="ai-vfader"
+                    aria-label={`${EQ_FREQS[i]}Hz ${g > 0 ? '+' : ''}${g}dB`}
+                    onChange={(e) => changeBand(i, parseInt(e.target.value))}
+                    onDoubleClick={() => changeBand(i, 0)}
+                  />
+                </div>
                 <div className="ai-fader-freq">{EQ_FREQS[i]}</div>
               </div>
             ))}

@@ -1,59 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import {
+  useOptimizationProgress,
+  startOptimizationProgress,
+  endOptimizationProgress,
+} from '../hooks/useOptimizationProgress';
+import { useAppliedState } from '../hooks/useAppliedState';
 import '../styles/GameMode.css';
 
 function GameMode() {
-  const [enabled, setEnabled] = useState(false);
+  // 메뉴를 옮기면 이 패널은 언마운트된다 — 적용 상태는 백엔드에서 복원한다.
+  const [enabled, setEnabled] = useAppliedState('gamemode');
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState(null);
-  const [gameModeStatus, setGameModeStatus] = useState(null);
 
-  useEffect(() => {
-    loadStatus();
-  }, []);
+  // 백엔드 단계별 진행률을 좌하단 토스트로 중계
+  useOptimizationProgress('gamemode');
 
-  const loadStatus = async () => {
-    try {
-      if (window.electronAPI?.gaming?.getStatus) {
-        const status = await window.electronAPI.gaming.getStatus();
-        setGameModeStatus(status);
-        setEnabled(status?.enabled || false);
-      }
-    } catch (error) {
-      console.error('Error loading Game Mode status:', error);
-    }
-  };
+  // ON이면 게임 최적화를 즉시 적용하고, OFF면 켜기 직전에 찍어둔 설정으로 되돌린다.
+  // 실패하면 토글을 원래 위치로 되돌려 UI와 실제 시스템 상태가 어긋나지 않게 한다.
+  const handleToggle = async () => {
+    if (applying) return;
 
-  const handleApply = async () => {
     if (!window.electronAPI?.gaming) {
       console.error('Gaming API is not available');
       return;
     }
 
+    const next = !enabled;
+    setEnabled(next);
     setApplying(true);
     setApplyResult(null);
+    startOptimizationProgress(
+      'gamemode',
+      next ? '최적화 진행 중' : '설정 해제 중',
+      next ? '게임 최적화 시작...' : '기본값 복원 시작...'
+    );
 
     try {
-      let result;
-      if (enabled) {
-        result = await window.electronAPI.gaming.enableGameMode();
-      } else {
-        result = await window.electronAPI.gaming.disableGameMode();
-      }
+      const result = next
+        ? await window.electronAPI.gaming.enableGameMode()
+        : await window.electronAPI.gaming.disableGameMode();
       setApplyResult(result);
-      await loadStatus();
+      if (!result?.success) {
+        setEnabled(!next);
+      }
     } catch (error) {
       console.error('Apply error:', error);
+      setEnabled(!next);
       setApplyResult({
         success: false,
-        error: error.message || 'Game Mode 설정 적용 중 오류가 발생했습니다.',
+        error:
+          error.message ||
+          (next
+            ? 'Game Mode 설정 적용 중 오류가 발생했습니다.'
+            : 'Game Mode 설정 해제 중 오류가 발생했습니다.'),
       });
     } finally {
       setApplying(false);
+      endOptimizationProgress();
     }
-  };
-
-  const handleToggle = () => {
-    setEnabled(!enabled);
   };
 
   return (
@@ -76,7 +81,7 @@ function GameMode() {
             </button>
           </div>
           <p className="toggle-description">
-            원클릭으로 FPS·마우스 가속·반응속도·핑을 한 번에 최적화합니다. 관리자 권한 없이 즉시 적용되며, 앱을 관리자 권한으로 실행하면 GPU 스케줄링·핑(네트워크)·게임 작업 우선순위까지 자동 적용됩니다.
+            ON으로 켜면 FPS·마우스 가속·반응속도 최적화가 즉시 적용되고, OFF로 끄면 <strong>켜기 직전의 설정</strong>으로 정확히 되돌립니다.
           </p>
         </div>
       </div>
@@ -127,57 +132,24 @@ function GameMode() {
                 <div className="optimization-description">백그라운드 우선순위 조정 및 응답 지연 개선</div>
               </div>
             </div>
-            <div className="optimization-item">
-              <span className="optimization-icon">✓</span>
-              <div className="optimization-content">
-                <div className="optimization-name">핑·네트워크 지연 최소화 <span style={{ opacity: 0.6 }}>(관리자 실행 시)</span></div>
-                <div className="optimization-description">Nagle/ACK 지연 off, TCP 튜닝으로 반응속도 향상</div>
-              </div>
-            </div>
-            <div className="optimization-item">
-              <span className="optimization-icon">✓</span>
-              <div className="optimization-content">
-                <div className="optimization-name">GPU 스케줄링·게임 작업 우선순위 <span style={{ opacity: 0.6 }}>(관리자 실행 시)</span></div>
-                <div className="optimization-description">하드웨어 가속 GPU 스케줄링 및 MMCSS 우선순위 상향</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
 
-      <div className="game-mode-card">
-        <div className="action-section">
-          <button
-            className="action-button apply-button"
-            onClick={handleApply}
-            disabled={applying}
-          >
-            {applying ? '적용 중...' : '설정 적용'}
-          </button>
-        </div>
-      </div>
-
-      {applying && (
-        <div className="game-mode-card">
-          <div className="applying-section">
-            <div className="applying-message">Game Mode 설정 적용 중...</div>
-            <div className="progress-bar-container">
-              <div className="progress-bar">
-                <div className="progress-bar-fill"></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* 진행 상황은 좌하단 전역 진행률 토스트(MainPage)가 단계별로 표시한다. */}
 
       {applyResult && applyResult.success && (
         <div className="game-mode-card">
           <div className="success-message">
             <div className="success-icon">✓</div>
             <div className="success-text">
-              <h3 className="success-title">Game Mode 설정이 성공적으로 적용되었습니다.</h3>
+              <h3 className="success-title">
+                Game Mode 설정이 성공적으로 {enabled ? '적용' : '해제'}되었습니다.
+              </h3>
               <p className="success-description">
-                게임 성능 최적화 설정이 적용되었습니다.
+                {enabled
+                  ? '게임 성능 최적화 설정이 적용되었습니다.'
+                  : '켜기 직전의 설정으로 되돌렸습니다.'}
               </p>
             </div>
           </div>

@@ -132,39 +132,91 @@
   background: #0a0d11;
   border: 1px solid #20262e;
 }
-.ai-eq-faders { display: flex; justify-content: space-between; gap: 4px; padding: 4px 6px 0; }
-.ai-fader { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 1; }
-.ai-fader-val { font-family: 'Consolas', monospace; font-size: 11px; color: var(--muted); min-height: 14px; }
+/* 커브 캔버스와 페이더 열을 세로로 정확히 맞물리게 한다.
+   캔버스는 1px 테두리가 있어 그리기 영역이 좌우로 1px씩 좁으므로 페이더 행에도 같은
+   안쪽 여백을 준다. 그러면 두 요소의 콘텐츠 폭이 같아지고, 열 중심은 양쪽 모두
+   (i + 0.5) / 10 지점이 된다(SoundBoost.jsx의 커브 x 계산과 동일한 공식).
+   열 사이 간격은 gap이 아니라 열 내부 여백으로 낸다 — gap을 쓰면 중심이 이 공식에서 벗어난다. */
+.ai-eq-faders { display: flex; padding: 6px 1px 0; }
+.ai-fader {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.ai-fader-val {
+  font-family: 'Consolas', monospace; font-size: 11px; color: var(--muted);
+  min-height: 14px; font-variant-numeric: tabular-nums;
+}
 .ai-console.on .ai-fader-val { color: var(--accent); }
-.ai-fader-freq { font-family: 'Consolas', monospace; font-size: 10px; color: var(--muted); }
+.ai-fader-freq {
+  font-family: 'Consolas', monospace; font-size: 10px; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 
-/* Vertical fader (webkit / Chromium) */
-.ai-vfader {
-  -webkit-appearance: slider-vertical;
-  appearance: slider-vertical;
-  width: 8px;
+/* ---- Vertical fader ----
+   `appearance: slider-vertical`은 표준에서 빠진 키워드다. Chromium은 이 모드에서 커스텀
+   ::-webkit-slider-thumb 지오메트리를 제대로 반영하지 못해 기본 "원형" thumb으로 폴백하고,
+   트랙 중심과도 어긋난다(그래서 캡이 동그랗게, 삐뚤게 보였다).
+   대신 가로 슬라이더를 -90° 회전시켜 트랙·캡 크기를 픽셀 단위로 직접 제어한다. */
+.ai-fader-slot {
+  position: relative;
+  width: 26px;
   height: 116px;
+}
+/* 0 dB 디텐트 — 캡이 정중앙에 물렸는지 눈으로 확인할 수 있는 기준선 */
+.ai-fader-slot::before {
+  content: '';
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 20px; height: 1px;
+  transform: translate(-50%, -50%);
+  background: #2b333d;
+}
+
+.ai-vfader {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 116px;  /* 회전 후 세로 이동 거리 */
+  height: 22px;  /* 회전 후 가로 히트 영역 */
+  margin: 0;
+  padding: 0;
   background: transparent;
   cursor: ns-resize;
+  -webkit-appearance: none;
+  appearance: none;
+  /* 회전 좌표 매핑: 로컬 +x(오른쪽) → 화면 위, 로컬 +y(아래) → 화면 오른쪽 */
+  transform: translate(-50%, -50%) rotate(-90deg);
 }
 .ai-vfader::-webkit-slider-runnable-track {
-  width: 5px; border-radius: 0;
+  width: 100%;
+  height: 5px;
+  border-radius: 0;
   background: #1a1e25;
   box-shadow: inset 0 0 3px #000;
 }
+/* 로컬 12×22 → 회전 후 화면상 22×12 (콘솔 페이더 캡 비율).
+   margin-top = (트랙 5px − 캡 22px) / 2 = -8.5px → 트랙 정중앙에 정확히 물린다.
+   그라디언트/그림자는 회전 매핑에 맞춰 방향을 돌려놨다(화면 위쪽이 밝고, 그림자는 아래로). */
 .ai-vfader::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 22px; height: 12px; border-radius: 0;
-  background: linear-gradient(180deg, #4a5561, #2a3038);
+  width: 12px;
+  height: 22px;
+  border-radius: 0;
+  margin-top: -8.5px;
+  background: linear-gradient(90deg, #2a3038, #4a5561);
   border: 1px solid #5a6673;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
-  margin-left: -8px;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.6), inset -1px 0 0 rgba(255, 255, 255, 0.25);
 }
 .ai-console.on .ai-vfader::-webkit-slider-thumb {
-  background: linear-gradient(180deg, #5fe9db, #26b4a6);
+  background: linear-gradient(90deg, #26b4a6, #5fe9db);
   border-color: var(--accent);
-  box-shadow: 0 0 8px rgba(53, 224, 208, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 8px rgba(53, 224, 208, 0.5), inset -1px 0 0 rgba(255, 255, 255, 0.4);
 }
+.ai-vfader:focus-visible { outline: none; }
+.ai-vfader:focus-visible::-webkit-slider-thumb { border-color: var(--accent); }
 
 /* ---- Presets ---- */
 .ai-preset-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

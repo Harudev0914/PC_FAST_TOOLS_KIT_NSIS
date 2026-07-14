@@ -5,14 +5,13 @@
 //   사용 예: si.cpu() - CPU 하드웨어 정보 조회, si.currentLoad() - 현재 CPU 사용률 조회, si.processes() - 실행 중인 프로세스 목록 조회
 // - winreg (Registry): Windows 레지스트리 접근 라이브러리. 시작 프로그램 관리, 시각 효과 설정, 메모리 관리 설정 등에 사용
 //   사용 예: new Registry({ hive, key }) - 레지스트리 키 생성, .keys() - 하위 키 목록 조회, .set() - 값 설정, .remove() - 키 삭제
-// - child_process (exec): 시스템 명령어 실행. powercfg, taskkill, wmic, schtasks 등 Windows 명령어 실행에 사용
+// - child_process (exec): 시스템 명령어 실행. powercfg, taskkill, wmic 등 Windows 명령어 실행에 사용
 //   사용 예: execAsync('powercfg /list') - 전원 계획 목록 조회, execAsync('taskkill /F /PID ...') - 프로세스 강제 종료
 // - util (promisify): 콜백 기반 함수를 Promise로 변환. execAsync는 exec의 Promise 버전으로 사용
-// - permissions (permissionsService): 관리자 권한 확인 서비스. isAdmin() 함수로 현재 관리자 권한 여부 확인
+// 이 서비스는 사용자 권한(user-level)에서만 동작한다. 관리자 권한이 필요한 작업은 수행하지 않는다.
 
 const si = require('systeminformation');
 const Registry = require('winreg');
-const permissionsService = require('./permissions');
 const { execAsync, executePowerShell: executePowerShellWithEncoding, withTimeout: timeout } = require('./_exec');
 
 // @cpu.js (26-62)
@@ -64,23 +63,16 @@ async function getStats() {
 }
 
 // @cpu.js (64-92)
-// optimize 함수: CPU 최적화 수행
-// 매개변수: options - { requestAdminPermission: boolean } 최적화 옵션
+// optimize 함수: CPU 최적화 수행 (사용자 권한으로 가능한 항목만)
 // 반환값: results 객체 - 각 최적화 작업의 성공 여부와 작업 목록 포함
 // 변수 설명:
-//   - options: 최적화 옵션 객체, requestAdminPermission으로 관리자 권한 요청 여부 결정
 //   - results: 최적화 결과를 저장하는 객체
 //     * success: 전체 최적화 성공 여부
 //     * powerPlan, processorAffinity 등: 각 최적화 항목별 성공 여부 (boolean)
 //     * operations: 수행된 작업 목록 (문자열 배열)
 //     * errors: 발생한 오류 목록 ({ action, error } 객체 배열)
-//     * adminGranted: 관리자 권한 부여 여부
-//   - isAdmin: permissionsService.isAdmin()으로 확인한 현재 관리자 권한 여부
-// permissionsService 사용: isAdmin() 함수로 관리자 권한 확인, 관리자 권한이 필요한 작업은 isAdmin이 true일 때만 수행
 
-async function optimize(options = {}) {
-  const { requestAdminPermission = false } = options;
-  
+async function optimize() {
   const results = {
     success: true,
     powerPlan: false,
@@ -89,23 +81,15 @@ async function optimize(options = {}) {
     backgroundProcesses: false,
     coreParking: false,
     cpuThrottling: false,
-    windowsServices: false,
-    taskScheduler: false,
     visualEffects: false,
     processAffinity: false,
     schedulerPriority: false,
-    cacheOptimization: false,
     hyperthreading: false,
     turboBoost: false,
     interruptOptimization: false,
     operations: [],
     errors: [],
-    requiresAdmin: false,
-    adminGranted: false,
   };
-
-  const isAdmin = await permissionsService.isAdmin();
-  results.adminGranted = isAdmin;
 
   // @cpu.js (93-123)
   // 고성능 전원 계획 활성화
@@ -333,91 +317,32 @@ async function optimize(options = {}) {
     }
   }
 
-  if (isAdmin || requestAdminPermission) {
-    try {
-      const powerConfigTasks = [
-        timeout(
-          Promise.all([
-            execAsync('powercfg /setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0'),
-            execAsync('powercfg /setactive SCHEME_CURRENT'),
-          ]).then(() => {
-            results.coreParking = true;
-            results.operations.push('CPU 코어 파킹 비활성화 완료');
-          }),
-          5000
-        ).catch(() => {}),
-        timeout(
-          Promise.all([
-            execAsync('powercfg /setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100'),
-            execAsync('powercfg /setactive SCHEME_CURRENT'),
-          ]).then(() => {
-            results.cpuThrottling = true;
-            results.operations.push('CPU 스로틀링 방지 완료');
-          }),
-          5000
-        ).catch(() => {}),
-      ];
+  // 코어 파킹 비활성화 / 스로틀링 방지 — powercfg는 사용자 권한으로 동작한다.
+  // 명령이 실제로 성공한 경우에만 플래그와 작업 메시지를 기록한다(허위 성공 보고 방지).
+  const powerConfigTasks = [
+    timeout(
+      Promise.all([
+        execAsync('powercfg /setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0'),
+        execAsync('powercfg /setactive SCHEME_CURRENT'),
+      ]).then(() => {
+        results.coreParking = true;
+        results.operations.push('CPU 코어 파킹 비활성화 완료');
+      }),
+      5000
+    ).catch(() => {}),
+    timeout(
+      Promise.all([
+        execAsync('powercfg /setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 893dee8e-2bef-41e0-89c6-b55d0929964c 100'),
+        execAsync('powercfg /setactive SCHEME_CURRENT'),
+      ]).then(() => {
+        results.cpuThrottling = true;
+        results.operations.push('CPU 스로틀링 방지 완료');
+      }),
+      5000
+    ).catch(() => {}),
+  ];
 
-      await Promise.all(powerConfigTasks);
-    } catch (error) {
-      // Ignore errors
-    }
-  } else {
-    results.operations.push('CPU 코어 파킹/스로틀링 최적화 skipped (requires admin)');
-  }
-
-  if (isAdmin || requestAdminPermission) {
-    try {
-      const servicesToDisable = ['SysMain', 'WSearch', 'DiagTrack'];
-      let disabledCount = 0;
-      
-      const servicePromises = servicesToDisable.map(service =>
-        executePowerShellWithEncoding(`Stop-Service -Name '${service}' -ErrorAction SilentlyContinue; Set-Service -Name '${service}' -StartupType Disabled -ErrorAction SilentlyContinue`)
-          .then(() => disabledCount++)
-          .catch(() => {})
-      );
-      
-      await Promise.all(servicePromises);
-      
-      if (disabledCount > 0) {
-        results.windowsServices = true;
-        results.operations.push(`Windows 서비스 ${disabledCount}개 비활성화 완료`);
-      }
-    } catch (error) {
-      // Ignore errors
-    }
-  } else {
-    results.operations.push('Windows 서비스 최적화 skipped (requires admin)');
-  }
-
-  if (isAdmin || requestAdminPermission) {
-    try {
-      const tasksToDisable = [
-        'Microsoft\\Windows\\UpdateOrchestrator\\USO_UxBroker',
-        'Microsoft\\Windows\\UpdateOrchestrator\\Reboot',
-        'Microsoft\\Windows\\DiskCleanup\\SilentCleanup',
-        'Microsoft\\Windows\\WindowsUpdate\\Automatic App Update',
-      ];
-      let disabledCount = 0;
-      
-      const taskPromises = tasksToDisable.map(task =>
-        execAsync(`schtasks /Change /TN "${task}" /Disable`)
-          .then(() => disabledCount++)
-          .catch(() => {})
-      );
-      
-      await Promise.all(taskPromises);
-      
-      if (disabledCount > 0) {
-        results.taskScheduler = true;
-        results.operations.push(`작업 스케줄러 ${disabledCount}개 비활성화 완료`);
-      }
-    } catch (error) {
-      // Ignore errors
-    }
-  } else {
-    results.operations.push('작업 스케줄러 최적화 skipped (requires admin)');
-  }
+  await Promise.all(powerConfigTasks);
 
   try {
     await new Promise((resolve, reject) => {
@@ -530,37 +455,6 @@ async function optimize(options = {}) {
     results.errors.push({ action: 'schedulerPriority', error: error.message });
   }
 
-  if (isAdmin || requestAdminPermission) {
-    try {
-      const memoryManagementKey = new Registry({
-        hive: Registry.HKLM,
-        key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-      });
-      
-      await Promise.all([
-        new Promise((resolve, reject) => {
-          memoryManagementKey.set('LargeSystemCache', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        }),
-        new Promise((resolve, reject) => {
-          memoryManagementKey.set('DisablePagingExecutive', Registry.REG_DWORD, '1', (err) => {
-            if (err) reject(err);
-            else resolve();
-          });
-        }),
-      ]);
-      
-      results.cacheOptimization = true;
-      results.operations.push('CPU 캐시 최적화 완료');
-    } catch (error) {
-      // Ignore errors
-    }
-  } else {
-    results.operations.push('CPU 캐시 최적화 skipped (requires admin)');
-  }
-
   try {
     const cpuInfo = await si.cpu().catch(() => ({ cores: 0 }));
     const coreCount = cpuInfo.cores || 0;
@@ -606,34 +500,21 @@ async function optimize(options = {}) {
     // Ignore errors
   }
 
-  if (isAdmin || requestAdminPermission) {
-    try {
-      const interruptKey = new Registry({
-        hive: Registry.HKLM,
-        key: '\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management',
-      });
-      
-      await timeout(
-        Promise.all([
-          execAsync('powercfg /setacvalueindex SCHEME_CURRENT 238c9fa8-0aad-41ed-83f4-97be242c8f20 bd3b718a-0680-4d9d-8ab2-e1d2b4ac806d 0'),
-          execAsync('powercfg /setactive SCHEME_CURRENT'),
-          new Promise((resolve, reject) => {
-            interruptKey.set('IRQBalance', Registry.REG_DWORD, '1', (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          }),
-        ]),
-        5000
-      );
-      
-      results.interruptOptimization = true;
-      results.operations.push('인터럽트 처리 최적화 완료');
-    } catch (error) {
-      // Ignore errors
-    }
-  } else {
-    results.operations.push('인터럽트 처리 최적화 skipped (requires admin)');
+  // 인터럽트 처리(PCIe 링크 상태 전원 관리) 최적화 — powercfg는 사용자 권한으로 동작한다.
+  // (기존의 HKLM\...\Memory Management\IRQBalance 레지스트리 기록은 관리자 권한이 필요해 제거)
+  try {
+    await timeout(
+      Promise.all([
+        execAsync('powercfg /setacvalueindex SCHEME_CURRENT 238c9fa8-0aad-41ed-83f4-97be242c8f20 bd3b718a-0680-4d9d-8ab2-e1d2b4ac806d 0'),
+        execAsync('powercfg /setactive SCHEME_CURRENT'),
+      ]),
+      5000
+    );
+
+    results.interruptOptimization = true;
+    results.operations.push('인터럽트 처리 최적화 완료');
+  } catch (error) {
+    // Ignore errors
   }
 
   if (!results.operations) {

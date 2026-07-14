@@ -5,102 +5,74 @@ if (!process.env.NODE_ENV || process.env.NODE_ENV === 'production') {
     get: () => undefined,
     set: () => {}
   });
-  
+
   window.addEventListener('devtools-opened', () => {
     window.location.reload();
   });
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Cleaner
-  cleaner: {
-    scan: () => ipcRenderer.invoke('cleaner:scan'),
-    clean: (options) => ipcRenderer.invoke('cleaner:clean', options),
-  },
+  optimization: {
+    // 토글(Game Mode / Windows Boost)이 적용된 상태인지 조회한다. 패널은 메뉴를 옮길 때마다
+    // 언마운트되므로, 마운트 시 이걸로 ON/OFF를 복원한다.
+    getStatus: (key) => ipcRenderer.invoke('optimization:getStatus', key),
 
-  // Memory
-  memory: {
-    getStats: () => ipcRenderer.invoke('memory:getStats'),
-    optimize: (options) => ipcRenderer.invoke('memory:optimize', options),
-    getProcesses: () => ipcRenderer.invoke('memory:getProcesses'),
-    killProcess: (pid) => ipcRenderer.invoke('memory:killProcess', pid),
-  },
-
-  // Network
-  network: {
-    getStats: () => ipcRenderer.invoke('network:getStats'),
-    optimize: (options) => ipcRenderer.invoke('network:optimize', options),
-    pingTest: (host) => ipcRenderer.invoke('network:pingTest', host),
-  },
-
-  // Network Optimization API (QUIC, ENet, IOCP)
-  networkOptimization: {
-    detectAPIs: () => ipcRenderer.invoke('networkOptimization:detectAPIs'),
-    enableQUIC: (options) => ipcRenderer.invoke('networkOptimization:enableQUIC', options),
-    optimizeENet: (options) => ipcRenderer.invoke('networkOptimization:optimizeENet', options),
-    optimizeIOCP: (options) => ipcRenderer.invoke('networkOptimization:optimizeIOCP', options),
-    optimizeAll: (options) => ipcRenderer.invoke('networkOptimization:optimizeAll', options),
+    // 오래 걸리는 작업이 단계마다 보내는 진행 상황 이벤트를 구독한다.
+    // 구독 해제 함수를 반환하므로 호출 측(useEffect)에서 정리할 수 있다.
+    onProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('optimization:progress', listener);
+      return () => ipcRenderer.removeListener('optimization:progress', listener);
+    },
   },
 
   // Audio
   audio: {
     getDevices: () => ipcRenderer.invoke('audio:getDevices'),
-    setVolume: (deviceId, volume) => ipcRenderer.invoke('audio:setVolume', deviceId, volume),
-    boost: (enabled) => ipcRenderer.invoke('audio:boost', enabled),
     getSettings: () => ipcRenderer.invoke('audio:getSettings'),
     applySoundBoost: (settings) => ipcRenderer.invoke('audio:applySoundBoost', settings),
     getEQPresets: () => ipcRenderer.invoke('audio:getEQPresets'),
-    detectModels: () => ipcRenderer.invoke('audio:detectModels'),
     isEqualizerApoInstalled: () => ipcRenderer.invoke('audio:isEqualizerApoInstalled'),
-    openEqualizerApoDownload: () => ipcRenderer.invoke('audio:openEqualizerApoDownload'),
     installEqualizerApo: () => ipcRenderer.invoke('audio:installEqualizerApo'),
   },
 
   // Gaming
   gaming: {
-    enable: () => ipcRenderer.invoke('gaming:enable'),
-    disable: () => ipcRenderer.invoke('gaming:disable'),
-    getStatus: () => ipcRenderer.invoke('gaming:getStatus'),
-    enableGameMode: (options) => ipcRenderer.invoke('gaming:enableGameMode', options),
+    enableGameMode: () => ipcRenderer.invoke('gaming:enableGameMode'),
     disableGameMode: () => ipcRenderer.invoke('gaming:disableGameMode'),
   },
 
-  // Recovery
-  recovery: {
-    scan: (options) => ipcRenderer.invoke('recovery:scan', options),
-    recover: (filePath, destination) => ipcRenderer.invoke('recovery:recover', filePath, destination),
+  // Delta Force Cleaner / Windows Boost
+  deltaForceCleaner: {
+    scan: (dirPath) => ipcRenderer.invoke('deltaForceCleaner:scan', dirPath),
+    clean: (dirPath) => ipcRenderer.invoke('deltaForceCleaner:clean', dirPath),
+    findDirectory: () => ipcRenderer.invoke('deltaForceCleaner:findDirectory'),
+    optimizeWithWindowsAPI: () => ipcRenderer.invoke('deltaForceCleaner:optimizeWithWindowsAPI'),
+    restoreWindowsDefaults: () => ipcRenderer.invoke('deltaForceCleaner:restoreWindowsDefaults'),
   },
 
-  // Updater
-  updater: {
-    getInstalled: () => ipcRenderer.invoke('updater:getInstalled'),
-    checkUpdates: (software) => ipcRenderer.invoke('updater:checkUpdates', software),
-    checkAllUpdates: () => ipcRenderer.invoke('updater:checkAllUpdates'),
-    update: (software) => ipcRenderer.invoke('updater:update', software),
+  // Fast Ping
+  fastPing: {
+    batchOptimize: (options) => ipcRenderer.invoke('fastPing:batchOptimize', options),
+    batchAccelerate: (options) => ipcRenderer.invoke('fastPing:batchAccelerate', options),
+    pingOptimize: (options) => ipcRenderer.invoke('fastPing:pingOptimize', options),
   },
 
-  // Driver
-  driver: {
-    getDrivers: () => ipcRenderer.invoke('driver:getDrivers'),
-    checkUpdates: () => ipcRenderer.invoke('driver:checkUpdates'),
-    update: (driver) => ipcRenderer.invoke('driver:update', driver),
+  // 단일 컴포넌트 최적화 (Smart Optimization 패널)
+  cpu: {
+    optimize: () => ipcRenderer.invoke('cpu:optimize'),
   },
-
-  // CPU
-    cpu: {
-      getStats: () => ipcRenderer.invoke('cpu:getStats'),
-      optimize: () => ipcRenderer.invoke('cpu:optimize'),
-      optimizeSafe: () => ipcRenderer.invoke('cpu:optimizeSafe'),
-      setPriority: (pid, priority) => ipcRenderer.invoke('cpu:setPriority', pid, priority),
-    },
-
-  // Compute Optimization (OpenCL, CUDA, Intel oneAPI)
-  computeOptimization: {
-    optimizeOpenCL: (options) => ipcRenderer.invoke('computeOptimization:optimizeOpenCL', options),
-    optimizeCUDA: (options) => ipcRenderer.invoke('computeOptimization:optimizeCUDA', options),
-    optimizeIntelOneAPI: (options) => ipcRenderer.invoke('computeOptimization:optimizeIntelOneAPI', options),
-    optimizeAll: (options) => ipcRenderer.invoke('computeOptimization:optimizeAll', options),
-    detectLibraries: () => ipcRenderer.invoke('computeOptimization:detectLibraries'),
+  memory: {
+    optimize: (options) => ipcRenderer.invoke('memory:optimize', options),
+  },
+  disk: {
+    optimize: (options) => ipcRenderer.invoke('disk:optimize', options),
+  },
+  network: {
+    optimize: (options) => ipcRenderer.invoke('network:optimize', options),
+  },
+  gpu: {
+    optimize: (options) => ipcRenderer.invoke('gpu:optimize', options),
   },
 
   // System Stats
@@ -108,69 +80,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAll: () => ipcRenderer.invoke('systemStats:getAll'),
   },
 
-  // History
-  history: {
-    getTypes: () => ipcRenderer.invoke('history:getTypes'),
-    clear: (types) => ipcRenderer.invoke('history:clear', types),
-    schedule: (config) => ipcRenderer.invoke('history:schedule', config),
+  // Updater
+  updater: {
+    checkAllUpdates: () => ipcRenderer.invoke('updater:checkAllUpdates'),
+    update: (software) => ipcRenderer.invoke('updater:update', software),
   },
 
-  // Permissions
-  permissions: {
-    isAdmin: () => ipcRenderer.invoke('permissions:isAdmin'),
-    requestAdmin: () => ipcRenderer.invoke('permissions:requestAdmin'),
-    confirmAction: (action, details) => ipcRenderer.invoke('permissions:confirmAction', action, details),
+  // Driver
+  driver: {
+    getDrivers: () => ipcRenderer.invoke('driver:getDrivers'),
+    update: (driver) => ipcRenderer.invoke('driver:update', driver),
   },
 
   // Window controls
   window: {
     minimize: () => ipcRenderer.invoke('window:minimize'),
-    maximize: () => ipcRenderer.invoke('window:maximize'),
     toggleMaximize: () => ipcRenderer.invoke('window:toggleMaximize'),
     close: () => ipcRenderer.invoke('window:close'),
-  },
-
-  // Platform
-  platform: {
-    getOSInfo: () => ipcRenderer.invoke('platform:getOSInfo'),
-  },
-
-  // Disk
-  disk: {
-    optimize: (options) => ipcRenderer.invoke('disk:optimize', options),
-  },
-
-  // GPU Optimization
-  gpu: {
-    optimize: (options) => ipcRenderer.invoke('gpu:optimize', options),
-  },
-
-  // Fast Ping
-  fastPing: {
-    optimizeGameMode: (options) => ipcRenderer.invoke('fastPing:optimizeGameMode', options),
-    optimizeWorkMode: (options) => ipcRenderer.invoke('fastPing:optimizeWorkMode', options),
-    batchOptimize: (options) => ipcRenderer.invoke('fastPing:batchOptimize', options),
-    batchAccelerate: (options) => ipcRenderer.invoke('fastPing:batchAccelerate', options),
-    pingOptimize: (options) => ipcRenderer.invoke('fastPing:pingOptimize', options),
-  },
-
-  // Delta Force Cleaner
-  deltaForceCleaner: {
-    scan: (dirPath) => ipcRenderer.invoke('deltaForceCleaner:scan', dirPath),
-    clean: (dirPath) => ipcRenderer.invoke('deltaForceCleaner:clean', dirPath),
-    findDirectory: () => ipcRenderer.invoke('deltaForceCleaner:findDirectory'),
-    getGameExplorerGames: () => ipcRenderer.invoke('deltaForceCleaner:getGameExplorerGames'),
-    installGameToExplorer: (gamePath, gdfPath) => ipcRenderer.invoke('deltaForceCleaner:installGameToExplorer', gamePath, gdfPath),
-    uninstallGameFromExplorer: (instanceID) => ipcRenderer.invoke('deltaForceCleaner:uninstallGameFromExplorer', instanceID),
-    optimizeWithWindowsAPI: (options) => ipcRenderer.invoke('deltaForceCleaner:optimizeWithWindowsAPI', options),
-    manageApplicationsAndServices: (options) => ipcRenderer.invoke('deltaForceCleaner:manageApplicationsAndServices', options),
-  },
-
-  // Version
-  version: {
-    getCurrentVersion: () => ipcRenderer.invoke('version:getCurrentVersion'),
-    checkVersion: (options) => ipcRenderer.invoke('version:checkVersion', options),
-    getTrackingInfo: () => ipcRenderer.invoke('version:getTrackingInfo'),
-    validateLicense: () => ipcRenderer.invoke('version:validateLicense'),
   },
 });

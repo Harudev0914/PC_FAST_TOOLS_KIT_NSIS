@@ -134,7 +134,6 @@ async function clean(options = {}) {
     tempFiles = true,
     browserCache = true,
     registry = false,
-    safeDelete = true,
   } = options;
 
   const results = {
@@ -163,7 +162,7 @@ async function clean(options = {}) {
   }
 
   if (browserCache) {
-    for (const [browser, cachePath] of Object.entries(BROWSER_CACHE_PATHS)) {
+    for (const cachePath of Object.values(BROWSER_CACHE_PATHS)) {
       try {
         const result = await scanDirectory(cachePath);
         for (const file of result.files) {
