@@ -25,6 +25,9 @@ win:
       arch:
         - x64
   # icon: build/icon.ico  # Optional: Add icon file if available
+  # 최적화 기능(Game Mode / Windows Boost / Smart Optimization)은 사용자 권한만으로 동작한다
+  # — HKCU · 사용자 TEMP · powercfg만 쓴다. 하지만 Updates 패널의 드라이버 업데이트가
+  # `pnputil /update-driver`를 호출하고 이건 관리자 권한이 필수라, 앱 전체는 여전히 승격이 필요하다.
   requestedExecutionLevel: requireAdministrator
   artifactName: ${productName}-${version}-Setup.${ext}
 nsis:
